@@ -1,0 +1,16 @@
+# UMS gitignore
+# Rule 4: No secrets in repo.
+# Rule 23: Source vs build artifacts. Exception: src-tauri/icons/ (rule 3).
+
+node_modules/
+dist/
+target/
+*.log
+.env
+.env.*
+docs/dev/
+.DS_Store
+Thumbs.db
+
+# Asset build outputs (source SVGs and src-tauri/icons/ ARE committed - see assets/README.md)
+assets/generated/
