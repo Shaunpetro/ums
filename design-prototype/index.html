@@ -1,0 +1,486 @@
+<!-- Path: design-prototype/index.html -->
+<!-- Purpose: Full functional dashboard layout with FileLu-style sidebar, VSC Mining branding, context-aware search, and detailed module views. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UMS - Management System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Background decorative elements to show off the glass blur -->
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+
+    <div class="app-container">
+        
+        <!-- SIDEBAR -->
+        <aside class="sidebar glass-panel">
+            
+            <!-- Expressive Brand Section -->
+            <div class="brand">
+                <div class="logo-circle"></div>
+                <div class="brand-text-group">
+                    <span class="brand-title">Ubuveil</span>
+                    <span class="brand-subtitle">Management System</span>
+                </div>
+            </div>
+
+            <!-- FileLu Style New Button -->
+            <button class="new-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                New Upload
+            </button>
+
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="dashboard-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    Dashboard
+                </a>
+                <a href="#" class="nav-item" data-tab="storage-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    Storage Drive
+                </a>
+                <a href="#" class="nav-item" data-tab="tenders-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    Tenders
+                </a>
+                <a href="#" class="nav-item" data-tab="invoices-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"></path><path d="M8 7h8"></path><path d="M8 11h8"></path><path d="M8 15h5"></path></svg>
+                    Invoices
+                </a>
+                <a href="#" class="nav-item" data-tab="projects-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                    Projects
+                </a>
+                <a href="#" class="nav-item" data-tab="tasks-view">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    Tasks
+                </a>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <!-- Storage Quota -->
+                <div class="storage-quota">
+                    <div class="flex-between" style="margin-bottom: 8px;">
+                        <span class="marker" style="font-size: 11px;">Storage</span>
+                        <span class="marker" style="font-size: 11px;">35 GB / 100 GB</span>
+                    </div>
+                    <div class="quota-bar">
+                        <div class="quota-fill" style="width: 35%;"></div>
+                    </div>
+                </div>
+
+                <div class="sidebar-footer">
+                    <div class="user-profile">
+                        <div class="avatar-circle"></div>
+                        <div class="user-info">
+                            <span class="user-name">Petro Malamule</span>
+                            <span class="user-role">Super User</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            
+            <!-- TOPBAR -->
+            <header class="topbar glass-panel">
+                <div class="search-bar">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="margin-right: 8px; opacity: 0.5;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="global-search" placeholder="Search all pipelines..." class="search-input">
+                </div>
+                <div class="topbar-actions">
+                    <!-- VSC Mining Logo Integration -->
+                    <div class="company-brand">
+                        <img src="https://www.vscmining.co.za/wp-content/uploads/2025/07/cropped-VSC-mining-logos_1.png" alt="VSC Mining" class="company-logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <span class="company-logo-fallback marker">[VSC MINING]</span>
+                    </div>
+                    
+                    <!-- Help Menu -->
+                    <div class="help-container">
+                        <button id="help-btn" class="icon-btn" title="Help & Support">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        </button>
+                        <div id="help-dropdown" class="help-dropdown glass-panel">
+                            <a href="#" class="help-item">📖 FAQ & Knowledge Base</a>
+                            <a href="#" class="help-item">🚨 Ping IT to come help</a>
+                            <a href="#" class="help-item">👨‍💻 Developer Info</a>
+                        </div>
+                    </div>
+
+                    <!-- Theme Toggle -->
+                    <button id="theme-toggle" class="icon-btn" title="Toggle Light/Dark Mode">
+                        <svg id="theme-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+                    </button>
+                    
+                    <!-- Notifications -->
+                    <button class="icon-btn">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- TAB 1: DASHBOARD -->
+            <div id="dashboard-view" class="tab-view active content-area">
+                <div class="page-header flex-between">
+                    <div>
+                        <h1>Dashboard</h1>
+                        <p>Welcome back, Petro. Here is your overview across all pipelines.</p>
+                    </div>
+                    <button class="action-btn">Customize Layout</button>
+                </div>
+
+                <div class="widget-grid">
+                    <div class="widget glass-panel">
+                        <div class="widget-header">Recent Files</div>
+                        <div class="widget-body list-body">
+                            <div class="list-item"><span>Q4_Tender_Draft.pdf</span> <span class="marker">2h ago</span></div>
+                            <div class="list-item"><span>VSC_Mining_Invoice_04.xlsx</span> <span class="marker">Yesterday</span></div>
+                            <div class="list-item"><span>Site_Survey_Photos.zip</span> <span class="marker">2 days ago</span></div>
+                        </div>
+                    </div>
+
+                    <div class="widget glass-panel">
+                        <div class="widget-header">Active Tenders (Tracker)</div>
+                        <div class="widget-body list-body">
+                            <div class="list-item">
+                                <div class="item-main"><strong>North Shaft Expansion</strong><br><span class="marker">Due: 3 days</span></div>
+                                <span class="badge warning">Drafting</span>
+                            </div>
+                            <div class="list-item">
+                                <div class="item-main"><strong>Safety Gear Supply</strong><br><span class="marker">Last submitted: Oct 20</span></div>
+                                <span class="badge success">Submitted</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget glass-panel">
+                        <div class="widget-header">Invoice Tracker</div>
+                        <div class="widget-body list-body">
+                            <div class="list-item">
+                                <div class="item-main"><strong>INV-2026-089</strong><br><span class="marker">R 45,000.00 - VSC Mining</span></div>
+                                <span class="badge warning">Unsent</span>
+                            </div>
+                            <div class="list-item">
+                                <div class="item-main"><strong>INV-2026-088</strong><br><span class="marker">R 12,500.00 - ATG DesEng</span></div>
+                                <span class="badge danger">Follow-up</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget glass-panel">
+                        <div class="widget-header">My Tasks</div>
+                        <div class="widget-body list-body">
+                            <div class="list-item">
+                                <div class="item-main"><strong>Review Tender Docs</strong><br><span class="marker">Assigned to Petro</span></div>
+                                <span class="badge danger">Today</span>
+                            </div>
+                            <div class="list-item">
+                                <div class="item-main"><strong>Update CRM Records</strong><br><span class="marker">Assigned to Shaun</span></div>
+                                <span class="badge warning">Tomorrow</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: STORAGE DRIVE (Departments, Sites & Local Sync) -->
+            <div id="storage-view" class="tab-view content-area">
+                <div class="storage-toolbar glass-panel">
+                    <div class="breadcrumbs">
+                        <span class="crumb">Storage</span>
+                        <span class="crumb-separator">/</span>
+                        <span class="crumb active-crumb">Overview</span>
+                    </div>
+                    <div class="storage-actions">
+                        <button class="outline-btn" id="layout-toggle">Switch to List View</button>
+                        <button class="action-btn">New Folder</button>
+                    </div>
+                </div>
+
+                <!-- Local Sync Status -->
+                <div class="sync-status-card glass-panel">
+                    <div class="sync-info">
+                        <div class="sync-icon">💻</div>
+                        <div>
+                            <h3 style="font-size: 16px; margin-bottom: 4px;">Local Sync (E:\UMS_Sync)</h3>
+                            <p class="marker">Last synced: Today at 10:45 AM</p>
+                        </div>
+                    </div>
+                    <div class="sync-actions">
+                        <span class="badge success" style="margin-right: 12px;">Synced</span>
+                        <button class="text-btn">View Error Logs</button>
+                    </div>
+                </div>
+
+                <!-- Departments -->
+                <h3 class="section-title">Departments</h3>
+                <div class="storage-files grid-view" id="departments-container">
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon dept-finance">💰</div>
+                        <div class="file-name">Finance & Billing</div>
+                        <div class="file-meta"><span class="marker">12 GB</span></div>
+                    </div>
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon dept-ops">⚙️</div>
+                        <div class="file-name">Operations</div>
+                        <div class="file-meta"><span class="marker">8 GB</span></div>
+                    </div>
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon dept-eng">🏗️</div>
+                        <div class="file-name">Engineering</div>
+                        <div class="file-meta"><span class="marker">15 GB</span></div>
+                    </div>
+                </div>
+
+                <!-- Sites -->
+                <h3 class="section-title">Sites & Projects</h3>
+                <div class="storage-files grid-view" id="sites-container">
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon site-icon">📁</div>
+                        <div class="file-name">CRM</div>
+                        <div class="file-meta"><span class="marker">Shared</span></div>
+                    </div>
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon site-icon">📁</div>
+                        <div class="file-name">Kopanang</div>
+                        <div class="file-meta"><span class="marker">Shared</span></div>
+                    </div>
+                    <div class="file-card folder-card glass-panel">
+                        <div class="file-icon site-icon">📁</div>
+                        <div class="file-name">Transnet</div>
+                        <div class="file-meta"><span class="marker">Shared</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: TENDERS (Full Bid Management Workspace) -->
+            <div id="tenders-view" class="tab-view content-area">
+                <div class="page-header flex-between">
+                    <div>
+                        <h1>Tender Workspace</h1>
+                        <p>Active bid tracking, compliance, and submission readiness.</p>
+                    </div>
+                    <button class="action-btn">New Opportunity</button>
+                </div>
+
+                <div class="tender-workspace-layout">
+                    <!-- Active Tender Focus (Left Side) -->
+                    <div class="tender-focus glass-panel">
+                        <div class="tender-focus-header">
+                            <div>
+                                <span class="badge danger" style="margin-bottom: 8px;">Due in 3 Days</span>
+                                <h2>North Shaft Expansion</h2>
+                                <p class="marker">Client: VSC Mining | Est Value: R 2.4M</p>
+                            </div>
+                            <div class="tender-completion">
+                                <div class="circular-progress" style="--percent: 75;">
+                                    <span>75%</span>
+                                </div>
+                                <span class="marker">Ready</span>
+                            </div>
+                        </div>
+
+                        <div class="compliance-section">
+                            <h4>Required Compliances</h4>
+                            <div class="compliance-item">
+                                <div class="checkbox checked">✓</div>
+                                <span>Tax Clearance Certificate</span>
+                            </div>
+                            <div class="compliance-item">
+                                <div class="checkbox checked">✓</div>
+                                <span>B-BBEE Certificate</span>
+                            </div>
+                            <div class="compliance-item">
+                                <div class="checkbox" style="border-color: var(--ubv-warning);"></div>
+                                <span>Safety File (Drafting in progress)</span>
+                                <span class="badge warning">60%</span>
+                            </div>
+                            <div class="compliance-item">
+                                <div class="checkbox" style="border-color: var(--ubv-danger);"></div>
+                                <span>Pricing Schedule (Pending)</span>
+                                <span class="badge danger">Pending</span>
+                            </div>
+                        </div>
+
+                        <div class="milestone-section">
+                            <h4>Tender Milestones</h4>
+                            <div class="timeline-item done">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content">
+                                    <h5>Go / No-Go Decision</h5>
+                                    <span class="marker">Approved on Oct 15</span>
+                                </div>
+                            </div>
+                            <div class="timeline-item active">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content">
+                                    <h5>Compile Documents</h5>
+                                    <span class="marker">In Progress (Due Oct 30)</span>
+                                </div>
+                            </div>
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content">
+                                    <h5>Final Submission</h5>
+                                    <span class="marker">Scheduled for Nov 02</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tender Pipeline (Right Side) -->
+                    <div class="tender-pipeline glass-panel">
+                        <h4>Pipeline Overview</h4>
+                        <div class="kanban-board-compact">
+                            <div class="kanban-column glass-panel">
+                                <div class="kanban-header"><span>Identified</span><span class="badge">1</span></div>
+                                <div class="kanban-cards">
+                                    <div class="kanban-card">
+                                        <h4>Conveyor Belt Maintenance</h4>
+                                        <div class="kanban-footer"><span class="marker">Est: R 1.2M</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="kanban-column glass-panel">
+                                <div class="kanban-header"><span>Submitted</span><span class="badge">1</span></div>
+                                <div class="kanban-cards">
+                                    <div class="kanban-card">
+                                        <h4>Safety Gear Supply</h4>
+                                        <div class="kanban-footer"><span class="marker">Oct 20</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: INVOICES -->
+            <div id="invoices-view" class="tab-view content-area">
+                <div class="page-header flex-between">
+                    <div>
+                        <h1>Invoices & Quotes</h1>
+                        <p>Manage billing, track payments, and send follow-ups.</p>
+                    </div>
+                    <div class="storage-actions">
+                        <button class="outline-btn">Create Quote</button>
+                        <button class="action-btn">New Invoice</button>
+                    </div>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card glass-panel"><span class="marker">Total Outstanding</span><h2>R 124,500.00</h2></div>
+                    <div class="metric-card glass-panel"><span class="marker">Overdue</span><h2 style="color: var(--ubv-danger);">R 12,500.00</h2></div>
+                    <div class="metric-card glass-panel"><span class="marker">Paid This Month</span><h2 style="color: var(--ubv-success);">R 89,000.00</h2></div>
+                </div>
+
+                <div class="widget glass-panel" style="padding: 0; overflow: hidden;">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Invoice #</th><th>Client</th><th>Amount</th><th>Date</th><th>Status</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>INV-2026-089</strong></td><td>VSC Mining</td><td>R 45,000.00</td><td>Oct 24, 2026</td>
+                                <td><span class="badge warning">Draft</span></td><td><button class="text-btn">Send</button></td>
+                            </tr>
+                            <tr>
+                                <td><strong>INV-2026-088</strong></td><td>ATG DesEng</td><td>R 12,500.00</td><td>Oct 15, 2026</td>
+                                <td><span class="badge danger">Overdue</span></td><td><button class="text-btn">Follow Up</button></td>
+                            </tr>
+                            <tr>
+                                <td><strong>INV-2026-085</strong></td><td>UMS Setup</td><td>R 89,000.00</td><td>Oct 01, 2026</td>
+                                <td><span class="badge success">Paid</span></td><td><button class="text-btn">Download</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 5: PROJECTS -->
+            <div id="projects-view" class="tab-view content-area">
+                <div class="page-header flex-between">
+                    <div>
+                        <h1>Project Workflows</h1>
+                        <p>Manage active pipelines, milestones, and deliverables.</p>
+                    </div>
+                    <button class="action-btn">New Project</button>
+                </div>
+
+                <div class="kanban-board">
+                    <div class="kanban-column glass-panel">
+                        <div class="kanban-header"><span>To Do</span><span class="badge">2</span></div>
+                        <div class="kanban-cards">
+                            <div class="kanban-card">
+                                <span class="badge warning" style="margin-bottom: 8px;">High Priority</span>
+                                <h4>Draft North Shaft Proposal</h4>
+                                <div class="kanban-footer"><span class="marker">Due Tomorrow</span><div class="mini-avatar" style="background: #EB6F65;">P</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kanban-column glass-panel">
+                        <div class="kanban-header"><span>In Progress</span><span class="badge">1</span></div>
+                        <div class="kanban-cards">
+                            <div class="kanban-card">
+                                <h4>Ventilation System Design</h4>
+                                <div class="progress-bar"><div class="progress-fill" style="width: 60%;"></div></div>
+                                <div class="kanban-footer"><span class="marker">60% Complete</span><div class="mini-avatar" style="background: #2BB673;">A</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 6: TASKS -->
+            <div id="tasks-view" class="tab-view content-area">
+                <div class="page-header flex-between">
+                    <div>
+                        <h1>Task Management</h1>
+                        <p>All assigned action items and CRM follow-ups.</p>
+                    </div>
+                    <button class="action-btn">Create Task</button>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card glass-panel"><span class="marker">Tasks Due Today</span><h2>3</h2></div>
+                    <div class="metric-card glass-panel"><span class="marker">Overdue</span><h2 style="color: var(--ubv-danger);">1</h2></div>
+                    <div class="metric-card glass-panel"><span class="marker">Completed (This Week)</span><h2 style="color: var(--ubv-success);">12</h2></div>
+                </div>
+
+                <div class="widget glass-panel">
+                    <div class="widget-header">My Tasks</div>
+                    <div class="task-list">
+                        <div class="task-item">
+                            <div class="task-checkbox"></div>
+                            <div class="task-content"><h4>Review Tender Docs</h4><span class="marker">Associated: North Shaft Expansion | Due Today</span></div>
+                            <span class="badge danger">High</span>
+                            <div class="mini-avatar" style="background: #EB6F65;">P</div>
+                        </div>
+                        <div class="task-item">
+                            <div class="task-checkbox"></div>
+                            <div class="task-content"><h4>Update CRM Records for Q4</h4><span class="marker">Associated: ATG DesEng | Due Tomorrow</span></div>
+                            <span class="badge warning">Medium</span>
+                            <div class="mini-avatar" style="background: #4a3b6b;">S</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FOOTER -->
+            <footer class="app-footer">
+                © 2026 Ubuveil Apps. All rights reserved. Built for ATG DesEng (PTY) LTD.
+            </footer>
+
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,593 @@
+/* Path: ums-app/src/styles/globals.css */
+/* Purpose: Global design tokens, reset, typography, and shared UI primitives (buttons, badges). */
+
+:root {
+    /* Brand */
+    --ubv-brand-gradient-start: #EB6F65;
+    --ubv-brand-gradient-end: #F5AB82;
+    --ubv-brand-gradient: linear-gradient(135deg, var(--ubv-brand-gradient-start), var(--ubv-brand-gradient-end));
+
+    /* Warm Dark Neutrals (Default) */
+    --ubv-bg-primary: #17151a;
+    --ubv-bg-elevated: #1f1d24;
+    --ubv-text-main: #e8e4dd;
+    --ubv-text-muted: #a6a19a;
+    --ubv-border: rgba(255, 255, 255, 0.08);
+    --ubv-glass-bg: rgba(23, 21, 26, 0.55);
+    --ubv-glass-border: 1px solid rgba(255, 255, 255, 0.1);
+    --ubv-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+    /* Utils */
+    --ubv-success: #2BB673;
+    --ubv-warning: #F5AB82;
+    --ubv-danger: #EB6F65;
+
+    /* Typography & Geometry */
+    --ubv-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ubv-radius-card: 12px;
+    --ubv-radius-pill: 999px;
+}
+
+body.light-mode {
+    --ubv-bg-primary: #f7f4ee;
+    --ubv-bg-elevated: #ffffff;
+    --ubv-text-main: #241f18;
+    --ubv-text-muted: #6b655c;
+    --ubv-border: rgba(36, 31, 24, 0.08);
+    --ubv-glass-bg: rgba(247, 244, 238, 0.6);
+    --ubv-glass-border: 1px solid rgba(36, 31, 24, 0.08);
+    --ubv-glass-shadow: 0 8px 32px rgba(36, 31, 24, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: var(--ubv-font);
+}
+
+body {
+    background-color: var(--ubv-bg-primary);
+    color: var(--ubv-text-main);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Force React root to full screen */
+#root {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+/* =========================================
+   SHARED UI PRIMITIVES
+   ========================================= */
+
+.glass-panel {
+    background: var(--ubv-glass-bg);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: var(--ubv-glass-border);
+    border-radius: var(--ubv-radius-card);
+    box-shadow: var(--ubv-glass-shadow);
+    transition: background 0.3s ease, border 0.3s ease;
+}
+
+.marker { 
+    color: var(--ubv-text-muted); 
+    font-size: 13px; 
+}
+
+.flex-between { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+}
+
+/* Buttons */
+.action-btn { 
+    background: var(--ubv-brand-gradient); 
+    color: white; 
+    border: none; 
+    padding: 10px 20px; 
+    border-radius: var(--ubv-radius-pill); 
+    font-weight: 500; 
+    font-size: 14px;
+    cursor: pointer; 
+    transition: all 0.2s ease; 
+    box-shadow: 0 4px 12px rgba(235, 111, 101, 0.3); 
+    white-space: nowrap;
+}
+
+.action-btn:hover { 
+    opacity: 0.9; 
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(235, 111, 101, 0.4);
+}
+
+.outline-btn { 
+    background: transparent; 
+    color: var(--ubv-text-main); 
+    border: 1px solid var(--ubv-border); 
+    padding: 10px 20px; 
+    border-radius: var(--ubv-radius-pill); 
+    font-weight: 500; 
+    font-size: 14px;
+    cursor: pointer; 
+    transition: all 0.2s ease; 
+    white-space: nowrap;
+}
+
+.outline-btn:hover { 
+    background: rgba(128, 128, 128, 0.1); 
+}
+
+.text-btn { 
+    background: none; 
+    border: none; 
+    color: var(--ubv-brand-gradient-start); 
+    font-weight: 500; 
+    cursor: pointer; 
+    font-size: 13px; 
+}
+
+.text-btn:hover { 
+    text-decoration: underline; 
+}
+
+/* Badges */
+.badge { 
+    font-size: 11px; 
+    font-weight: 600; 
+    padding: 4px 8px; 
+    border-radius: 4px; 
+    text-transform: uppercase; 
+    letter-spacing: 0.5px; 
+    display: inline-block; 
+}
+
+.badge.warning { background: rgba(245, 171, 130, 0.15); color: var(--ubv-warning); }
+.badge.success { background: rgba(43, 182, 115, 0.15); color: var(--ubv-success); }
+.badge.danger { background: rgba(235, 111, 101, 0.15); color: var(--ubv-danger); }
+.badge:not(.warning):not(.success):not(.danger) { background: rgba(128, 128, 128, 0.15); color: var(--ubv-text-main); }
+
+/* Append to: ums-app/src/styles/globals.css */
+
+/* =========================================
+   MODERN SCROLLBARS
+   ========================================= */
+
+/* Standard (Firefox) */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+body.light-mode * {
+    scrollbar-color: rgba(36, 31, 24, 0.15) transparent;
+}
+
+/* WebKit (Chrome, Edge, Safari - Tauri uses WebView2 based on Chrome) */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    /* The 2px transparent border creates "padding" around the thumb, making it look like a floating pill */
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Light Mode WebKit Overrides */
+body.light-mode ::-webkit-scrollbar-thumb {
+    background-color: rgba(36, 31, 24, 0.15);
+}
+
+body.light-mode ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(36, 31, 24, 0.3);
+}
+
+/* Append to: ums-app/src/styles/globals.css */
+
+/* =========================================
+   COMPLEX UI COMPONENTS (Kanban, Timelines, Avatars)
+   ========================================= */
+
+/* Avatars & Stacks */
+.avatar-stack { display: flex; }
+.mini-avatar { 
+    width: 24px; 
+    height: 24px; 
+    border-radius: 50%; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-size: 10px; 
+    color: white; 
+    font-weight: 600; 
+    border: 2px solid var(--ubv-bg-primary); 
+    margin-left: -8px; 
+}
+.mini-avatar:first-child { margin-left: 0; }
+
+/* Kanban Board */
+.kanban-board { 
+    display: flex; 
+    gap: 16px; 
+    flex: 1; 
+    overflow-x: auto; 
+    padding-bottom: 16px; 
+    align-items: flex-start; 
+}
+.kanban-column { 
+    width: 300px; 
+    flex-shrink: 0; 
+    display: flex; 
+    flex-direction: column; 
+    padding: 16px; 
+    gap: 12px; 
+    background: rgba(23, 21, 26, 0.3); 
+    border: 1px solid var(--ubv-border); 
+    border-radius: var(--ubv-radius-card); 
+}
+body.light-mode .kanban-column { background: rgba(247, 244, 238, 0.4); }
+.kanban-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    font-weight: 600; 
+    font-size: 14px; 
+    padding-bottom: 12px; 
+    border-bottom: 1px solid var(--ubv-border); 
+}
+.kanban-cards { display: flex; flex-direction: column; gap: 12px; }
+.kanban-card { 
+    background: var(--ubv-glass-bg); 
+    backdrop-filter: blur(24px); 
+    border: var(--ubv-glass-border); 
+    padding: 16px; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    transition: transform 0.2s ease, border-color 0.2s ease; 
+}
+.kanban-card:hover { transform: scale(1.02); border-color: rgba(255, 255, 255, 0.2); }
+.kanban-card h4 { font-size: 14px; font-weight: 500; margin-bottom: 12px; line-height: 1.4; }
+.kanban-footer { display: flex; justify-content: space-between; align-items: center; }
+
+/* Progress Bars */
+.progress-bar { 
+    width: 100%; 
+    height: 6px; 
+    background: rgba(128, 128, 128, 0.2); 
+    border-radius: 3px; 
+    margin-bottom: 12px; 
+    overflow: hidden; 
+}
+.progress-fill { 
+    height: 100%; 
+    background: var(--ubv-brand-gradient); 
+    border-radius: 3px; 
+    transition: width 0.3s ease;
+}
+
+/* Compliance Checklists */
+.compliance-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(128, 128, 128, 0.1); }
+.compliance-item:last-child { border-bottom: none; }
+.checkbox { width: 20px; height: 20px; border: 2px solid var(--ubv-text-muted); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: white; }
+.checkbox.checked { background: var(--ubv-success); border-color: var(--ubv-success); }
+.compliance-item span:nth-child(2) { flex: 1; font-size: 14px; font-weight: 500; }
+
+/* Timelines */
+.timeline-item { display: flex; gap: 16px; padding-bottom: 24px; position: relative; }
+.timeline-item::before { content: ''; position: absolute; left: 6px; top: 16px; bottom: 0; width: 2px; background: var(--ubv-border); }
+.timeline-item:last-child::before { display: none; }
+.timeline-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ubv-bg-elevated); border: 2px solid var(--ubv-text-muted); margin-top: 4px; z-index: 1; }
+.timeline-item.done .timeline-dot { background: var(--ubv-success); border-color: var(--ubv-success); }
+.timeline-item.active .timeline-dot { background: var(--ubv-warning); border-color: var(--ubv-warning); }
+.timeline-content h5 { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+
+/* Circular Progress Ring */
+.circular-progress { 
+    width: 60px; height: 60px; border-radius: 50%; 
+    background: conic-gradient(var(--ubv-brand-gradient-start) calc(var(--percent) * 1%), rgba(128, 128, 128, 0.2) 0); 
+    display: flex; align-items: center; justify-content: center; 
+    position: relative; 
+}
+.circular-progress::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: var(--ubv-bg-elevated); }
+.circular-progress span { position: relative; font-size: 14px; font-weight: 600; }
+
+/* Append to: ums-app/src/styles/globals.css */
+
+/* =========================================
+   TENDER WORKSPACE (Master-Detail Layout)
+   ========================================= */
+
+   .tender-layout {
+    display: flex;
+    gap: 24px;
+    flex: 1;
+    align-items: flex-start;
+}
+
+/* Left Side: Active Tenders List */
+.tender-list {
+    flex: 1;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tender-list-item {
+    padding: 16px;
+    background: var(--ubv-glass-bg);
+    border: 1px solid var(--ubv-border);
+    border-radius: var(--ubv-radius-card);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tender-list-item:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateX(4px);
+}
+
+.tender-list-item.active {
+    border-color: var(--ubv-brand-gradient-start);
+    background: rgba(235, 111, 101, 0.08);
+}
+
+.tender-list-item h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+/* Right Side: Detail Workspace */
+.tender-detail {
+    flex: 2.5;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* Compliance Vault Items */
+.vault-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: rgba(128, 128, 128, 0.05);
+    border: 1px solid var(--ubv-border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.vault-doc-name {
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* =========================================
+   RESPONSIVE TENDER WORKSPACE
+   ========================================= */
+@media (max-width: 1100px) {
+    .tender-layout {
+        flex-direction: column;
+    }
+    .tender-list {
+        width: 100%;
+        flex-direction: row;
+        overflow-x: auto;
+    }
+    .tender-list-item {
+        min-width: 250px;
+    }
+}
+
+/* Append to: ums-app/src/styles/globals.css */
+
+/* =========================================
+   DATA TABLES (Invoices)
+   ========================================= */
+   .data-table { width: 100%; border-collapse: collapse; text-align: left; }
+   .data-table th { padding: 16px 24px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--ubv-text-muted); border-bottom: 1px solid var(--ubv-border); font-weight: 600; }
+   .data-table td { padding: 16px 24px; font-size: 14px; border-bottom: 1px solid var(--ubv-border); }
+   .data-table tbody tr:last-child td { border-bottom: none; }
+   .data-table tbody tr:hover { background: rgba(128, 128, 128, 0.05); }
+   .data-table td strong { font-weight: 500; color: var(--ubv-text-main); }
+   
+   /* =========================================
+      TASK LIST (HubSpot Style)
+      ========================================= */
+   .task-list { display: flex; flex-direction: column; }
+   .task-item { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--ubv-border); transition: background 0.2s ease; }
+   .task-item:hover { background: rgba(128, 128, 128, 0.05); }
+   .task-item:last-child { border-bottom: none; }
+   .task-checkbox { width: 20px; height: 20px; border: 2px solid var(--ubv-text-muted); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s ease; }
+   .task-checkbox:hover { border-color: var(--ubv-brand-gradient-start); }
+   .task-checkbox.checked { background: var(--ubv-success); border-color: var(--ubv-success); }
+   .task-content { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+   .task-content h4 { font-size: 15px; font-weight: 500; }
+   .task-meta { display: flex; gap: 12px; align-items: center; }
+   
+   /* =========================================
+      MODALS (Glassmorphism Overlay)
+      ========================================= */
+   .modal-overlay {
+       position: fixed;
+       inset: 0;
+       background: rgba(0, 0, 0, 0.6);
+       backdrop-filter: blur(8px);
+       -webkit-backdrop-filter: blur(8px);
+       display: flex;
+       align-items: center;
+       justify-content: center;
+       z-index: 1000;
+       opacity: 0;
+       pointer-events: none;
+       transition: opacity 0.3s ease;
+   }
+   
+   .modal-overlay.open {
+       opacity: 1;
+       pointer-events: auto;
+   }
+   
+   .modal-content {
+       width: 100%;
+       max-width: 500px;
+       padding: 32px;
+       transform: translateY(20px);
+       transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+   }
+   
+   .modal-overlay.open .modal-content {
+       transform: translateY(0);
+   }
+   
+   .modal-header {
+       display: flex;
+       justify-content: space-between;
+       align-items: center;
+       margin-bottom: 24px;
+   }
+   
+   .modal-title {
+       font-size: 20px;
+       font-weight: 600;
+   }
+   
+   .modal-close {
+       background: none;
+       border: none;
+       color: var(--ubv-text-muted);
+       cursor: pointer;
+   }
+   
+   .form-group {
+       display: flex;
+       flex-direction: column;
+       gap: 8px;
+       margin-bottom: 16px;
+   }
+   
+   .form-group label {
+       font-size: 13px;
+       font-weight: 500;
+       color: var(--ubv-text-muted);
+   }
+   
+   .form-input {
+       width: 100%;
+       padding: 12px 16px;
+       background: rgba(0, 0, 0, 0.2);
+       border: 1px solid var(--ubv-border);
+       border-radius: 8px;
+       color: var(--ubv-text-main);
+       font-size: 14px;
+       outline: none;
+       transition: border-color 0.2s ease;
+   }
+   body.light-mode .form-input { background: rgba(255, 255, 255, 0.5); }
+   
+   .form-input:focus {
+       border-color: var(--ubv-brand-gradient-start);
+   }
+
+   /* Append to: ums-app/src/styles/globals.css */
+
+/* =========================================
+   ANALYTICS & CHARTS (HubSpot Style)
+   ========================================= */
+.analytics-section {
+    margin-top: 32px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.analytics-card {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.analytics-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--ubv-border);
+    padding-bottom: 12px;
+}
+
+/* Mock Bar Chart */
+.bar-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 120px;
+    padding-top: 10px;
+}
+
+.bar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    height: 100%;
+    justify-content: flex-end;
+}
+
+.bar {
+    width: 100%;
+    max-width: 32px;
+    border-radius: 4px 4px 0 0;
+    transition: height 0.3s ease;
+}
+
+.bar-label {
+    font-size: 11px;
+    color: var(--ubv-text-muted);
+}
+
+/* Priority Breakdown */
+.priority-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.priority-bar-bg {
+    width: 100%;
+    height: 8px;
+    background: rgba(128, 128, 128, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.priority-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+}

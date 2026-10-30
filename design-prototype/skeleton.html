@@ -1,0 +1,138 @@
+<!-- Path: design-prototype/skeleton.html -->
+<!-- Purpose: Structural wireframe showing layout blocks, dimensions, and typography hierarchy. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UMS - Structural Skeleton</title>
+    <link rel="stylesheet" href="skeleton.css">
+</head>
+<body>
+
+    <div class="skeleton-app">
+        
+        <!-- SIDEBAR (Fixed 260px) -->
+        <aside class="sk-sidebar">
+            <div class="sk-block sk-brand">
+                <span class="sk-label">Brand Block (36px x 36px + Text)</span>
+            </div>
+            
+            <div class="sk-block sk-new-btn">
+                <span class="sk-label">Button: New Upload (Height: 40px)</span>
+            </div>
+
+            <nav class="sk-nav">
+                <div class="sk-nav-item active"><span class="sk-label">Nav Item (Height: 40px)</span></div>
+                <div class="sk-nav-item"><span class="sk-label">Nav Item</span></div>
+                <div class="sk-nav-item"><span class="sk-label">Nav Item</span></div>
+                <div class="sk-nav-item"><span class="sk-label">Nav Item</span></div>
+                <div class="sk-nav-item"><span class="sk-label">Nav Item</span></div>
+                <div class="sk-nav-item"><span class="sk-label">Nav Item</span></div>
+            </nav>
+
+            <div class="sk-sidebar-bottom">
+                <div class="sk-block sk-quota">
+                    <span class="sk-label">Storage Quota Bar (Height: 6px)</span>
+                </div>
+                <div class="sk-block sk-user-profile">
+                    <span class="sk-label">User Profile (40px x 40px Avatar)</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="sk-main">
+            
+            <!-- TOPBAR (Fixed 70px) -->
+            <header class="sk-topbar">
+                <div class="sk-block sk-search">
+                    <span class="sk-label">Search Input (Width: 350px, Height: 40px)</span>
+                </div>
+                <div class="sk-topbar-actions">
+                    <div class="sk-block sk-icon-btn"><span class="sk-label">Logo</span></div>
+                    <div class="sk-block sk-icon-btn"><span class="sk-label">Help</span></div>
+                    <div class="sk-block sk-icon-btn"><span class="sk-label">Theme</span></div>
+                    <div class="sk-block sk-icon-btn"><span class="sk-label">Notify</span></div>
+                </div>
+            </header>
+
+            <!-- SCROLLABLE CONTENT -->
+            <div class="sk-content">
+                
+                <!-- PAGE HEADER -->
+                <div class="sk-page-header">
+                    <div>
+                        <h1>H1 Typography (28px, 600)</h1>
+                        <p class="sk-body-text">Body text (15px, 400) - Welcome back, Petro. Here is your overview.</p>
+                    </div>
+                    <div class="sk-block sk-action-btn">
+                        <span class="sk-label">Action Button</span>
+                    </div>
+                </div>
+
+                <!-- METRICS GRID (3 Columns) -->
+                <div class="sk-metrics-grid">
+                    <div class="sk-block sk-metric">
+                        <span class="sk-caption">Caption (13px, 600, Uppercase)</span>
+                        <h2>H2 Metric (28px, 600)</h2>
+                    </div>
+                    <div class="sk-block sk-metric">
+                        <span class="sk-caption">Caption</span>
+                        <h2>H2 Metric</h2>
+                    </div>
+                    <div class="sk-block sk-metric">
+                        <span class="sk-caption">Caption</span>
+                        <h2>H2 Metric</h2>
+                    </div>
+                </div>
+
+                <!-- MAIN WIDGET GRID (2 Columns) -->
+                <div class="sk-widget-grid">
+                    
+                    <!-- Widget 1 -->
+                    <div class="sk-block sk-widget">
+                        <div class="sk-widget-header">
+                            <h3>H3 Widget Title (18px, 500)</h3>
+                        </div>
+                        <div class="sk-widget-body">
+                            <div class="sk-list-item">
+                                <span class="sk-body-text">List Item Content</span>
+                                <span class="sk-caption">Meta Data</span>
+                            </div>
+                            <div class="sk-list-item">
+                                <span class="sk-body-text">List Item Content</span>
+                                <span class="sk-caption">Meta Data</span>
+                            </div>
+                            <div class="sk-list-item">
+                                <span class="sk-body-text">List Item Content</span>
+                                <span class="sk-caption">Meta Data</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Widget 2 -->
+                    <div class="sk-block sk-widget">
+                        <div class="sk-widget-header">
+                            <h3>H3 Widget Title</h3>
+                        </div>
+                        <div class="sk-widget-body">
+                            <div class="sk-block" style="height: 100%; display: flex; align-items: center; justify-content: center;">
+                                <span class="sk-label">Chart / Kanban / Placeholder Area</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- FOOTER -->
+                <footer class="sk-footer">
+                    <span class="sk-caption">Footer Copyright (13px) © 2026 Ubuveil Apps.</span>
+                </footer>
+
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>

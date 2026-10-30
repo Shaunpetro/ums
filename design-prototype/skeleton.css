@@ -1,0 +1,268 @@
+/* Path: design-prototype/skeleton.css */
+/* Purpose: Raw structural layout and typography scale. No colors, no glass, just blocks. */
+
+/* =========================================
+   TYPOGRAPHY SCALE (Tokens)
+   ========================================= */
+   :root {
+    --sk-font: "Inter", system-ui, -apple-system, sans-serif;
+    
+    /* Typography */
+    --sk-h1-size: 28px;
+    --sk-h2-size: 24px;
+    --sk-h3-size: 18px;
+    --sk-body-size: 15px;
+    --sk-caption-size: 13px;
+
+    /* Layout Constraints */
+    --sk-sidebar-width: 260px;
+    --sk-topbar-height: 70px;
+    --sk-page-padding: 24px;
+    --sk-gap: 16px;
+}
+
+/* =========================================
+   RESET & BASE
+   ========================================= */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: var(--sk-font);
+}
+
+body {
+    background-color: #f4f4f4; /* Plain light gray for wireframe */
+    color: #333;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+}
+
+/* Typography Classes */
+h1 { font-size: var(--sk-h1-size); font-weight: 600; margin-bottom: 4px; }
+h2 { font-size: var(--sk-h2-size); font-weight: 600; }
+h3 { font-size: var(--sk-h3-size); font-weight: 500; }
+.sk-body-text { font-size: var(--sk-body-size); font-weight: 400; color: #555; }
+.sk-caption { font-size: var(--sk-caption-size); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #777; }
+
+/* =========================================
+   WIREFRAME BLOCKS
+   ========================================= */
+.sk-block {
+    background-color: #ffffff;
+    border: 2px dashed #cccccc;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.sk-label {
+    font-family: monospace;
+    font-size: 11px;
+    color: #999;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* =========================================
+   APP LAYOUT
+   ========================================= */
+.skeleton-app {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    padding: var(--sk-page-padding);
+    gap: var(--sk-gap);
+}
+
+/* =========================================
+   SIDEBAR (Fixed 260px)
+   ========================================= */
+.sk-sidebar {
+    width: var(--sk-sidebar-width);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-gap);
+    background-color: #fafafa;
+    border-right: 1px solid #ddd;
+    padding-right: var(--sk-page-padding);
+}
+
+.sk-brand {
+    height: 50px;
+    justify-content: flex-start;
+    padding: 0 16px;
+}
+
+.sk-new-btn {
+    height: 40px;
+}
+
+.sk-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.sk-nav-item {
+    height: 40px;
+    border: 2px dashed #e0e0e0;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+}
+.sk-nav-item.active {
+    border-color: #333;
+    background: #eee;
+}
+
+.sk-sidebar-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-gap);
+    margin-top: auto;
+}
+
+.sk-quota {
+    height: 30px;
+    justify-content: flex-start;
+    padding: 0 16px;
+}
+
+.sk-user-profile {
+    height: 50px;
+    justify-content: flex-start;
+    padding: 0 16px;
+}
+
+/* =========================================
+   MAIN CONTENT
+   ========================================= */
+.sk-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-gap);
+    min-width: 0; /* Prevents flex children from overflowing */
+}
+
+/* Topbar */
+.sk-topbar {
+    height: var(--sk-topbar-height);
+    background-color: #ffffff;
+    border: 2px dashed #cccccc;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--sk-page-padding);
+}
+
+.sk-search {
+    width: 350px;
+    height: 40px;
+    justify-content: flex-start;
+    padding: 0 16px;
+}
+
+.sk-topbar-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.sk-icon-btn {
+    width: 40px;
+    height: 40px;
+}
+
+/* Scrollable Content Area */
+.sk-content {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sk-gap);
+}
+
+/* Page Header */
+.sk-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: var(--sk-gap);
+    border-bottom: 1px solid #ddd;
+}
+
+.sk-action-btn {
+    width: 140px;
+    height: 40px;
+}
+
+/* Metric Grid (3 Columns) */
+.sk-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sk-gap);
+}
+
+.sk-metric {
+    height: 100px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0 var(--sk-page-padding);
+    gap: 8px;
+}
+
+/* Main Widget Grid (2 Columns) */
+.sk-widget-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--sk-gap);
+    flex: 1;
+}
+
+.sk-widget {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--sk-page-padding);
+    min-height: 250px;
+}
+
+.sk-widget-header {
+    padding-bottom: 12px;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 12px;
+}
+
+.sk-widget-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sk-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px dashed #eee;
+    border-radius: 6px;
+}
+
+/* Footer */
+.sk-footer {
+    padding: var(--sk-page-padding) 0;
+    text-align: center;
+    border-top: 1px solid #ddd;
+    margin-top: auto;
+}

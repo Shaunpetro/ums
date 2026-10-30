@@ -312,3 +312,36 @@ Each entry records a locked decision. Locked decisions require Pre-Change Discus
 
 **Locked:** yes
 **Date:** 2026-10-28
+
+---
+
+## DEC-030: Primary storage = FileLu S5 (100 GB, S3-compatible)
+
+**Decision:** Primary S3-compatible storage is FileLu S5.
+
+**Reason:** Gozunga's regional signup block prevents use from South Africa. FileLu S5 provides a genuine S3-compatible API on all free plans, with 100 GB lifetime available via the developer program (publishing a tool that integrates with FileLu). Region-agnostic, no request fees.
+
+**Supersedes:** DEC-029 (Cloudflare R2).
+**Locked:** yes
+**Date:** 2026-10-29
+
+---
+
+## DEC-031: Routing = React Router DOM
+
+**Decision:** Use `react-router-dom` for navigation.
+**Reason:** Allows the app to use real URLs (e.g., `/storage`, `/tenders`), makes back/forward navigation work, and cleanly separates views into isolated React components.
+
+---
+
+## DEC-032: Icons = Lucide React
+
+**Decision:** Use `lucide-react` for all icons.
+**Reason:** Provides a consistent, modern icon set that can be styled with standard CSS (`color`, `size`) and matches the clean aesthetic of the glassmorphism UI.
+
+---
+
+## DEC-033: Styling = Vanilla CSS + Custom Properties
+
+**Decision:** Use standard CSS files with CSS Custom Properties (Variables) for theming.
+**Reason:** Tailwind adds unnecessary class bloat for complex layouts like Kanban boards and custom glass effects. Vanilla CSS gives us absolute control over `backdrop-filter`, `conic-gradient`, and our dynamic light/dark mode tokens without a build-step penalty.
