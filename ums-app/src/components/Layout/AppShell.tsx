@@ -1,14 +1,15 @@
-// Path: src/components/Layout/AppShell.tsx
-// Purpose: Main layout wrapper containing Sidebar, Topbar, and content outlet.
+// Path: ums-app/src/components/Layout/AppShell.tsx
+// Purpose: Main layout wrapper containing Sidebar, Topbar, and content outlet with persistent theme toggling.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import './AppShell.css'; // We'll create this next
+import './AppShell.css';
 
 const NAV_ITEMS = [
     { path: '/', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/storage', label: 'Storage Drive', icon: <HardDrive size={18} /> },
+    { path: '/clients', label: 'Clients & CRM', icon: <Building2 size={18} /> },
     { path: '/tenders', label: 'Tenders', icon: <FileText size={18} /> },
     { path: '/invoices', label: 'Invoices', icon: <Receipt size={18} /> },
     { path: '/projects', label: 'Projects', icon: <Briefcase size={18} /> },
@@ -16,32 +17,41 @@ const NAV_ITEMS = [
 ];
 
 export default function AppShell() {
-    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isDarkMode, setIsDarkMode] = useState(() => {
+        const savedTheme = localStorage.getItem('ums-theme');
+        return savedTheme ? savedTheme === 'dark' : true;
+    });
+    
     const location = useLocation();
 
-    // Handle Theme Toggle
     useEffect(() => {
         if (isDarkMode) {
             document.body.classList.remove('light-mode');
+            localStorage.setItem('ums-theme', 'dark');
         } else {
             document.body.classList.add('light-mode');
+            localStorage.setItem('ums-theme', 'light');
         }
     }, [isDarkMode]);
 
-    // Context-aware search placeholder
     const getSearchPlaceholder = () => {
         const current = NAV_ITEMS.find(item => item.path === location.pathname);
         return current ? `Search in ${current.label}...` : 'Search all pipelines...';
     };
 
+    const handleNavClick = (e: React.MouseEvent, path: string) => {
+        // If clicking the link for the page we are already on, force a reset
+        if (location.pathname === path && path === '/storage') {
+            window.dispatchEvent(new Event('reset-storage-home'));
+        }
+    };
+
     return (
         <div className="app-container">
-            {/* Decorative Orbs */}
             <div className="bg-orb bg-orb-1"></div>
             <div className="bg-orb bg-orb-2"></div>
             <div className="bg-orb bg-orb-3"></div>
 
-            {/* SIDEBAR */}
             <aside className="sidebar glass-panel">
                 <div className="brand">
                     <div className="logo-circle"></div>
@@ -60,6 +70,7 @@ export default function AppShell() {
                         <NavLink 
                             key={item.path} 
                             to={item.path} 
+                            onClick={(e) => handleNavClick(e, item.path)}
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
                             {item.icon}
@@ -91,7 +102,6 @@ export default function AppShell() {
                 </div>
             </aside>
 
-            {/* MAIN CONTENT */}
             <main className="main-content">
                 <header className="topbar glass-panel">
                     <div className="search-bar">
@@ -109,7 +119,6 @@ export default function AppShell() {
                     </div>
                 </header>
 
-                {/* This is where the Dashboard or Storage pages will render */}
                 <div className="page-content">
                     <Outlet />
                 </div>
