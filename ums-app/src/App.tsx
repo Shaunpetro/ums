@@ -1,8 +1,10 @@
 // Path: ums-app/src/App.tsx
-// Purpose: Application router setup wrapped in the global upload context.
+// Purpose: Application router setup wrapped in Auth and Upload contexts.
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { UploadProvider } from './context/UploadContext';
+import LoginScreen from './components/Layout/LoginScreen';
 import AppShell from './components/Layout/AppShell';
 import Dashboard from './pages/Dashboard';
 import Storage from './pages/Storage';
@@ -12,7 +14,13 @@ import Invoices from './pages/Invoices';
 import Projects from './pages/Projects';
 import Tasks from './pages/Tasks';
 
-export default function App() {
+function AppContent() {
+    const { user } = useAuth();
+
+    if (!user) {
+        return <LoginScreen />;
+    }
+
     return (
         <UploadProvider>
             <BrowserRouter>
@@ -29,5 +37,13 @@ export default function App() {
                 </Routes>
             </BrowserRouter>
         </UploadProvider>
+    );
+}
+
+export default function App() {
+    return (
+        <AuthProvider>
+            <AppContent />
+        </AuthProvider>
     );
 }

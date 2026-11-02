@@ -1,7 +1,7 @@
 # Architecture Decision Log
 
 Path: docs/architecture/DECISIONS.md
-Last updated: 2026-10-28
+Last updated: 2026-11-02
 
 Each entry records a locked decision. Locked decisions require Pre-Change Discussion (rule 15) and Shaunpetro sign-off to alter. Entries are append-only; superseded decisions are marked SUPERSEDED with a reference to the newer decision.
 
@@ -345,3 +345,115 @@ Each entry records a locked decision. Locked decisions require Pre-Change Discus
 
 **Decision:** Use standard CSS files with CSS Custom Properties (Variables) for theming.
 **Reason:** Tailwind adds unnecessary class bloat for complex layouts like Kanban boards and custom glass effects. Vanilla CSS gives us absolute control over `backdrop-filter`, `conic-gradient`, and our dynamic light/dark mode tokens without a build-step penalty.
+
+---
+
+## DEC-034: Global Upload Context
+
+**Decision:** Upload queue is managed via React Context in `ums-app/src/context/UploadContext.tsx`, provided at the app root.
+
+**Reason:** Ensures background uploads persist across navigation between pipeline tabs, preventing accidental cancellation and providing a unified progress UI.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-035: Async Background Uploads
+
+**Decision:** File uploads in Rust use `tauri::async_runtime::spawn`.
+
+**Reason:** Prevents the Tauri UI from freezing during large transfers. Rust emits `upload-success` and `upload-error` events to update React asynchronously.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-036: Native Downloads
+
+**Decision:** Downloads are written directly to the user's Windows `Downloads` folder via Rust `app.path().download_dir()`. Browser and S3 presigned-URL downloads are not used.
+
+**Reason:** FileLu free tier blocks S3 pre-signed URLs (`AccessDenied`). A native download command bypasses the restriction entirely and gives a better desktop experience.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-037: Dynamic File Icons
+
+**Decision:** File and folder icons are color-coded: PDF=red, Word=blue, Excel=green, Images=purple, Company folders=gold, Departments=blue, Standard folders=gray.
+
+**Reason:** Adds scannable visual hierarchy without introducing custom icon assets (rule 41 unaffected). Colors chosen from the existing design token palette.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-038: Installer format = NSIS
+
+**Decision:** Phase 1 installer is NSIS (`-setup.exe`). WiX MSI deferred.
+
+**Reason:** Tauri's updater pipeline is most exercised against NSIS on Windows. WiX MSI has known v2 issues where updates succeed but leave the app on the old version when installed to a custom directory. NSIS preserves DEC-021 (shortcuts, `--repair-shortcuts`, Task Scheduler) without supersession.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-039: Updater = Tauri plugin, GitHub Releases endpoint
+
+**Decision:** `tauri-plugin-updater` with `bundle.createUpdaterArtifacts: true`, endpoint `https://github.com/shaunpetro/ums/releases/latest/download/latest.json`. Signing keypair generated with `cargo tauri signer generate`. Public key in `tauri.conf.json`. Private key in `docs/dev/DEV-GUIDE.md` and the `TAURI_SIGNING_PRIVATE_KEY` GitHub Actions secret.
+
+**Reason:** Exact combination recommended by Tauri release documentation for Windows-only distribution. `createUpdaterArtifacts` is mandatory for `.sig` generation. Endpoint must be HTTPS. Private key never enters git (rule 4).
+
+**Supersedes:** partially amends DEC-022 by specifying the exact endpoint and signing-key custody. "Sign-after-Authenticode" ordering deferred because Phase 1 ships unsigned per DEC-011.
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-040: Release pipeline = GitHub Actions
+
+**Decision:** Single workflow at `.github/workflows/release.yml` using `tauri-apps/tauri-action@v0` on `windows-latest`. Triggered by tag push matching `app-v*`. Manual dispatch also enabled.
+
+**Reason:** Tag-triggered releases make each release an explicit auditable event rather than every push to `main`. `app-v*` naming separates app releases from any future docs-only tags. Manual dispatch allows re-run on runner failure.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-041: Runtime secret delivery = OS keyring
+
+**Decision:** FileLu credentials stored in Windows Credential Manager via the `keyring` crate. First-run flow writes credentials to keyring. `get_s3_client()` reads from keyring on every call. `dotenvy` remains as a dev-only fallback for `cargo tauri dev`.
+
+**Reason:** `.env` at runtime does not exist on installed PCs. Keyring supports rotation without shipping a new installer and aligns with DEC-010's direction for the bisync cache. Baked-at-build and encrypted-config alternatives put secrets in the binary or add install-time complexity.
+
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-042: Version heartbeat deferred to Autentico
+
+**Decision:** The `org_id` version heartbeat defined in DEC-022 is deferred until Autentico is live. The updater itself is not blocked on Autentico.
+
+**Reason:** Oracle VPS provisioning for Autentico is still in capacity loop. Phase 1 is 3 PCs on internal infrastructure; manual rollout verification substitutes for telemetry until the IdP exists. Deferral is explicit so it is not silently dropped.
+
+**Supersedes:** partially defers DEC-022.
+**Locked:** yes
+**Date:** 2026-11-02
+
+---
+
+## DEC-043: Multi-user sync config lifecycle
+
+**Decision:** Array-of-configs `sync_configs.json` (from the shipped multi-user work) is the accepted baseline. `save_sync_config` stops the previous watcher for the same prefix before starting the new one. The boot loop starts watchers only for the currently authenticated UMS user.
+
+**Reason:** On-disk array is correct. Two defects remain in `lib.rs`: re-mapping leaves a duplicate watcher on the old path; boot loop starts watchers for users who are not logged in, causing concurrent sync on shared PCs. Both fixes are local to `lib.rs`.
+
+**Locked:** yes
+**Date:** 2026-11-02

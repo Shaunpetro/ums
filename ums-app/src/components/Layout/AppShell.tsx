@@ -1,9 +1,12 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout wrapper containing Sidebar, Topbar, and content outlet with persistent theme toggling.
+// Purpose: Main layout wrapper with dynamic live storage count and multi-user config checks.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2 } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useAuth } from '../../context/AuthContext';
+import SyncSetupModal from './SyncSetupModal';
 import './AppShell.css';
 
 const NAV_ITEMS = [
@@ -17,10 +20,15 @@ const NAV_ITEMS = [
 ];
 
 export default function AppShell() {
+    const { user, logout } = useAuth();
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const savedTheme = localStorage.getItem('ums-theme');
         return savedTheme ? savedTheme === 'dark' : true;
     });
+    
+    const [syncConfig, setSyncConfig] = useState<any>(null);
+    const [checkingConfig, setCheckingConfig] = useState(true);
+    const [storageUsed, setStorageUsed] = useState<number>(0);
     
     const location = useLocation();
 
@@ -34,23 +42,65 @@ export default function AppShell() {
         }
     }, [isDarkMode]);
 
+    // Fetch Configs (Multi-User)
+    useEffect(() => {
+        if (!user) return;
+        invoke<any[]>('get_all_sync_configs')
+            .then((configs) => {
+                // Find the config that belongs to the currently logged in user
+                const userConfig = configs.find(c => c.sync_target_prefix === `${user.path}/`);
+                if (userConfig) {
+                    setSyncConfig(userConfig);
+                } else {
+                    setSyncConfig(null);
+                }
+                setCheckingConfig(false);
+            })
+            .catch(() => setCheckingConfig(false));
+    }, [user]);
+
+    // Fetch Storage Usage
+    useEffect(() => {
+        const fetchUsage = () => {
+            invoke<number>('get_storage_usage')
+                .then((bytes) => setStorageUsed(bytes))
+                .catch(console.error);
+        };
+
+        fetchUsage();
+        const interval = setInterval(fetchUsage, 30000); // Refresh every 30s
+        return () => clearInterval(interval);
+    }, []);
+
     const getSearchPlaceholder = () => {
         const current = NAV_ITEMS.find(item => item.path === location.pathname);
         return current ? `Search in ${current.label}...` : 'Search all pipelines...';
     };
 
-    const handleNavClick = (e: React.MouseEvent, path: string) => {
-        // If clicking the link for the page we are already on, force a reset
-        if (location.pathname === path && path === '/storage') {
-            window.dispatchEvent(new Event('reset-storage-home'));
-        }
+    const formatSize = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
+
+    if (!user) return null;
+    if (checkingConfig) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-bg-primary)' }}>Loading UMS...</div>;
+
+    const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
 
     return (
         <div className="app-container">
             <div className="bg-orb bg-orb-1"></div>
             <div className="bg-orb bg-orb-2"></div>
             <div className="bg-orb bg-orb-3"></div>
+
+            {!syncConfig && (
+                <SyncSetupModal 
+                    userPath={user.path} 
+                    onComplete={(path, prefix) => setSyncConfig({ local_path: path, sync_target_prefix: prefix })} 
+                />
+            )}
 
             <aside className="sidebar glass-panel">
                 <div className="brand">
@@ -70,7 +120,6 @@ export default function AppShell() {
                         <NavLink 
                             key={item.path} 
                             to={item.path} 
-                            onClick={(e) => handleNavClick(e, item.path)}
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
                             {item.icon}
@@ -83,20 +132,25 @@ export default function AppShell() {
                     <div className="storage-quota">
                         <div className="flex-between" style={{ marginBottom: '8px' }}>
                             <span className="marker" style={{ fontSize: '11px' }}>Storage</span>
-                            <span className="marker" style={{ fontSize: '11px' }}>35 GB / 100 GB</span>
+                            <span className="marker" style={{ fontSize: '11px' }}>{formatSize(storageUsed)} / 100 GB</span>
                         </div>
                         <div className="quota-bar">
-                            <div className="quota-fill" style={{ width: '35%' }}></div>
+                            <div className="quota-fill" style={{ width: `${quotaPercentage}%` }}></div>
                         </div>
                     </div>
 
                     <div className="sidebar-footer">
                         <div className="user-profile">
-                            <div className="avatar-circle"></div>
-                            <div className="user-info">
-                                <span className="user-name">Petro Malamule</span>
-                                <span className="user-role">Super User</span>
+                            <div className="avatar-circle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-brand-gradient)' }}>
+                                <span style={{ color: 'white', fontWeight: 600 }}>{user.name.charAt(0)}</span>
                             </div>
+                            <div className="user-info" style={{ flex: 1 }}>
+                                <span className="user-name">{user.name}</span>
+                                <span className="user-role">{user.role}</span>
+                            </div>
+                            <button className="icon-btn" onClick={logout} title="Log out">
+                                <LogOut size={16} />
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -109,7 +163,7 @@ export default function AppShell() {
                     </div>
                     <div className="topbar-actions">
                         <div className="company-brand">
-                            <span className="marker" style={{ fontWeight: 700 }}>[VSC MINING]</span>
+                            <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
                         </div>
                         
                         <button className="icon-btn"><HelpCircle size={20} /></button>
@@ -120,7 +174,7 @@ export default function AppShell() {
                 </header>
 
                 <div className="page-content">
-                    <Outlet />
+                    <Outlet context={{ syncConfig, user }} />
                 </div>
             </main>
         </div>

@@ -1,8 +1,9 @@
 // Path: ums-app/src/pages/Storage.tsx
-// Purpose: Cloud Drive UI with deduplicated folders, Gold company icons, and distinct file colors.
+// Purpose: Cloud Drive UI mapped to the logged-in user's tenant path.
 
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, Share2, Trash2, X, RefreshCw, CheckCircle2, Home, Clock, FileImage, FileArchive, FileSpreadsheet, Download } from 'lucide-react';
@@ -15,8 +16,11 @@ interface S3Object {
 }
 
 export default function Storage() {
+    const { syncConfig, user } = useOutletContext<any>();
+    
+    // Initialize state with the user's personal path
+    const [currentPrefix, setCurrentPrefix] = useState<string>(`${user.path}/`);
     const [files, setFiles] = useState<S3Object[]>([]);
-    const [currentPrefix, setCurrentPrefix] = useState<string>('');
     const [selectedItem, setSelectedItem] = useState<S3Object | null>(null);
     
     const [loading, setLoading] = useState(true);
@@ -40,15 +44,20 @@ export default function Storage() {
             .catch((err) => { setError(err); setLoading(false); });
     };
 
+    // If the user changes (logs out and logs in as someone else), reset the path
+    useEffect(() => {
+        setCurrentPrefix(`${user.path}/`);
+    }, [user]);
+
     useEffect(() => {
         fetchFiles(currentPrefix);
     }, [currentPrefix]);
 
     useEffect(() => {
-        const handleReset = () => setCurrentPrefix('');
+        const handleReset = () => setCurrentPrefix(`${user.path}/`);
         window.addEventListener('reset-storage-home', handleReset);
         return () => window.removeEventListener('reset-storage-home', handleReset);
-    }, []);
+    }, [user]);
 
     const handleUpload = async () => {
         try {
@@ -121,7 +130,6 @@ export default function Storage() {
         return new Date(dateString).toLocaleString();
     };
 
-    // DYNAMIC FILE ICONS & COLORS
     const getFileVisuals = (fileName: string) => {
         const ext = fileName.split('.').pop()?.toLowerCase() || '';
         if (['pdf'].includes(ext)) return { icon: <FileText size={24} />, color: '#EB6F65' }; // Coral
@@ -133,13 +141,11 @@ export default function Storage() {
     };
 
     const getFolderVisuals = (key: string) => {
+        // If it's the user's root path, or one level up, use specific icons
         const depth = key.split('/').filter(Boolean).length;
-        // Company (Gold)
-        if (depth === 1) return { icon: <Building2 size={24} />, color: '#EAB308' }; 
-        // Department (Blue)
-        if (depth === 2) return { icon: <Briefcase size={24} />, color: '#a4b5d6' }; 
-        // Standard Folder (Gray)
-        return { icon: <Folder size={24} />, color: 'var(--ubv-text-muted)' }; 
+        if (depth === 1) return { icon: <Building2 size={24} />, color: '#EAB308' }; // Company (Gold)
+        if (depth === 2) return { icon: <Briefcase size={24} />, color: '#a4b5d6' }; // Department (Blue)
+        return { icon: <Folder size={24} />, color: 'var(--ubv-text-muted)' }; // Standard Folder (Gray)
     };
 
     const parseFileMeta = (key: string, isFolder: boolean) => {
@@ -156,10 +162,16 @@ export default function Storage() {
     const fileItems = files.filter(f => !f.is_folder);
     const recentFiles = fileItems.slice(0, 3); 
 
-    const pathSegments = currentPrefix.split('/').filter(Boolean);
-    const breadcrumbs = pathSegments.map((seg, index) => {
-        const path = pathSegments.slice(0, index + 1).join('/');
-        return { name: seg, path };
+    // --- BREADCRUMB LOGIC ---
+    // We strip the user.path from the currentPrefix so the breadcrumbs stay clean.
+    // e.g. "VSC Mining/DevOps/Petro/Projects/" becomes "Projects/"
+    const relativePath = currentPrefix.replace(`${user.path}/`, '').replace(`${user.path}`, '');
+    const pathSegments = relativePath.split('/').filter(Boolean);
+    
+    let accumulatedPath = user.path;
+    const breadcrumbs = pathSegments.map((seg) => {
+        accumulatedPath += `/${seg}`;
+        return { name: seg, path: accumulatedPath };
     });
 
     return (
@@ -169,7 +181,9 @@ export default function Storage() {
                 <div className="page-header flex-between" style={{ marginBottom: '24px' }}>
                     <div>
                         <h1 style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px' }}>Storage Drive</h1>
-                        <p className="marker">Connected to FileLu S3</p>
+                        <p className="marker">
+                            {syncConfig ? `Local Sync Active: ${syncConfig.local_path}` : `Cloud Workspace: ${user.path}`}
+                        </p>
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                         <button className="outline-btn" onClick={() => fetchFiles()}><RefreshCw size={16} /></button>
@@ -186,8 +200,9 @@ export default function Storage() {
                     <div>{loading ? <Loader2 size={16} className="spin" /> : <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--ubv-success)' }}></div>}</div>
                 </div>
 
+                {/* Breadcrumbs mapped to the User's Home */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                    <button className="text-btn" onClick={() => setCurrentPrefix('')} style={{ display: 'flex', alignItems: 'center', color: currentPrefix === '' ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }}>
+                    <button className="text-btn" onClick={() => setCurrentPrefix(`${user.path}/`)} style={{ display: 'flex', alignItems: 'center', color: pathSegments.length === 0 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="Go to Workspace Root">
                         <Home size={18} />
                     </button>
                     {breadcrumbs.map((crumb, i) => (
@@ -201,10 +216,10 @@ export default function Storage() {
                 {loading ? (
                     <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>Loading...</div>
                 ) : files.length === 0 ? (
-                    <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>This folder is empty.</div>
+                    <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>This folder is empty. Drop a file into your local sync folder to see it here.</div>
                 ) : (
                     <div>
-                        {currentPrefix === '' && recentFiles.length > 0 && (
+                        {currentPrefix === `${user.path}/` && recentFiles.length > 0 && (
                             <div style={{ marginBottom: '32px' }}>
                                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <Clock size={16} /> Recent Updates
@@ -212,13 +227,13 @@ export default function Storage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
                                     {recentFiles.map(file => {
                                         const visuals = getFileVisuals(file.key);
-                                        const { name, dir } = parseFileMeta(file.key, false);
+                                        const { name } = parseFileMeta(file.key, false);
                                         return (
                                             <div key={`recent-${file.key}`} className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setSelectedItem(file)}>
                                                 <div style={{ color: visuals.color }}>{visuals.icon}</div>
                                                 <div>
                                                     <div style={{ fontWeight: 500, fontSize: '14px', wordBreak: 'break-all' }}>{name}</div>
-                                                    <div className="marker" style={{ fontSize: '11px' }}>in {dir}</div>
+                                                    <div className="marker" style={{ fontSize: '11px' }}>{formatDate(file.last_modified)}</div>
                                                 </div>
                                             </div>
                                         );
@@ -257,7 +272,7 @@ export default function Storage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
                                     {fileItems.map((file) => {
                                         const visuals = getFileVisuals(file.key);
-                                        const { name, dir } = parseFileMeta(file.key, false);
+                                        const { name } = parseFileMeta(file.key, false);
                                         return (
                                             <div 
                                                 key={file.key} className="glass-panel" 
@@ -268,7 +283,6 @@ export default function Storage() {
                                                     <div style={{ color: visuals.color }}>{visuals.icon}</div>
                                                     <div>
                                                         <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
-                                                        <div className="marker" style={{ fontSize: '11px' }}>in {dir}</div>
                                                     </div>
                                                 </div>
                                                 <div className="flex-between" style={{ marginTop: 'auto' }}>
@@ -288,7 +302,7 @@ export default function Storage() {
                 {uploadQueue.length > 0 && (
                     <div style={{ marginBottom: '32px' }}>
                         <div className="flex-between" style={{ marginBottom: '16px' }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Uploads</h3>
+                            <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Sync Status</h3>
                             <button className="text-btn" onClick={clearUploads} style={{ fontSize: '12px' }}>Clear</button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -300,6 +314,11 @@ export default function Storage() {
                                         {job.status === 'success' && <CheckCircle2 size={14} color="var(--ubv-success)" />}
                                         {job.status === 'error' && <AlertCircle size={14} color="var(--ubv-danger)" />}
                                     </div>
+                                    {job.message && (
+                                        <div style={{ fontSize: '11px', color: job.status === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-text-muted)', marginTop: '4px' }}>
+                                            {job.message}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
