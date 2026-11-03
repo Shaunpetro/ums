@@ -40,6 +40,10 @@ jobs:
         working-directory: ums-app
         run: npm ci
 
+      - name: TypeScript check
+        working-directory: ums-app
+        run: npx tsc --noEmit
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:

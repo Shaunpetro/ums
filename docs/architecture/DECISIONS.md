@@ -457,3 +457,33 @@ Each entry records a locked decision. Locked decisions require Pre-Change Discus
 
 **Locked:** yes
 **Date:** 2026-11-02
+
+---
+
+## DEC-044: Hybrid "Ping IT" Support System
+
+**Decision:** IT support pings will write a JSON payload to `ums/orgs/{org-id}/it_alerts/` in S3, and trigger a stubbed email notification via Resend.
+**Reason:** Provides immediate in-app context (S3) while preparing for an asynchronous email fallback (Resend) without requiring third-party chat apps on the user's PC. Uses existing infrastructure.
+
+**Locked:** yes
+**Date:** 2026-11-03
+
+---
+
+## DEC-045: System Tray & Background Sync
+
+**Decision:** The app will minimize to the Windows System Tray on window close instead of terminating. The `notify` file watcher will remain active in the background. Auto-start on boot is enabled.
+**Reason:** To function as a backup and sync tool, the app must run continuously. Closing the window should not stop the sync engine. Tray icon provides a way to manually quit.
+
+**Locked:** yes
+**Date:** 2026-11-03
+
+---
+
+## DEC-046: Windows Installer Identity
+
+**Decision:** `productName` is "Ubuveil Management System", `mainBinaryName` is "ums-app", and Publisher is "ATG (Pty) Ltd".
+**Reason:** Decouples the user-facing display name (Start Menu, Windows Settings) from the underlying file paths and binary name. This allows existing installations to update seamlessly without changing the folder structure or breaking uninstallers.
+
+**Locked:** yes
+**Date:** 2026-11-03

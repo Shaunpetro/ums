@@ -1,13 +1,15 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with FileLu credential gate, per-user sync lifecycle, and live storage count.
+// Purpose: Main layout with dynamic footer, tray-aware UI, and help modal.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { useAuth } from '../../context/AuthContext';
 import SyncSetupModal from './SyncSetupModal';
 import FileLuSetupModal from './FileLuSetupModal';
+import HelpModal from './HelpModal';
 import './AppShell.css';
 
 const NAV_ITEMS = [
@@ -27,6 +29,8 @@ export default function AppShell() {
         return savedTheme ? savedTheme === 'dark' : true;
     });
 
+    const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [appVersion, setAppVersion] = useState('');
     const [credChecked, setCredChecked] = useState(false);
     const [credsSet, setCredsSet] = useState(false);
     const [syncChecked, setSyncChecked] = useState(false);
@@ -35,6 +39,10 @@ export default function AppShell() {
     const [storageUsed, setStorageUsed] = useState<number>(0);
 
     const location = useLocation();
+
+    useEffect(() => {
+        getVersion().then(setAppVersion);
+    }, []);
 
     useEffect(() => {
         if (isDarkMode) {
@@ -46,7 +54,7 @@ export default function AppShell() {
         }
     }, [isDarkMode]);
 
-    // Check FileLu credentials once per logged-in user
+    // Check FileLu credentials
     useEffect(() => {
         if (!user) return;
         setCredChecked(false);
@@ -62,7 +70,7 @@ export default function AppShell() {
             });
     }, [user]);
 
-    // Per-user sync lifecycle: find config, start watcher
+    // Per-user sync lifecycle
     useEffect(() => {
         if (!user || !credsSet) return;
         setSyncChecked(false);
@@ -127,12 +135,15 @@ export default function AppShell() {
     }
 
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
+    const lastUpdated = new Date().toLocaleDateString(); // Placeholder for dynamic exe timestamp
 
     return (
         <div className="app-container">
             <div className="bg-orb bg-orb-1"></div>
             <div className="bg-orb bg-orb-2"></div>
             <div className="bg-orb bg-orb-3"></div>
+
+            {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
 
             {!credsSet && (
                 <FileLuSetupModal
@@ -178,6 +189,12 @@ export default function AppShell() {
                 </nav>
 
                 <div className="sidebar-bottom">
+                    {/* FileLu Status */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '12px' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: credsSet ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
+                        <span className="marker" style={{ fontSize: '12px', fontWeight: 600 }}>FileLu {credsSet ? 'Connected' : 'Disconnected'}</span>
+                    </div>
+
                     <div className="storage-quota">
                         <div className="flex-between" style={{ marginBottom: '8px' }}>
                             <span className="marker" style={{ fontSize: '11px' }}>Storage</span>
@@ -205,7 +222,7 @@ export default function AppShell() {
                 </div>
             </aside>
 
-            <main className="main-content">
+            <main className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
                 <header className="topbar glass-panel">
                     <div className="search-bar">
                         <input type="text" placeholder={getSearchPlaceholder()} className="search-input" />
@@ -215,16 +232,32 @@ export default function AppShell() {
                             <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
                         </div>
 
-                        <button className="icon-btn"><HelpCircle size={20} /></button>
+                        <button className="icon-btn" onClick={() => setIsHelpOpen(true)} title="Help & Support">
+                            <HelpCircle size={20} />
+                        </button>
                         <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
                             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
                     </div>
                 </header>
 
-                <div className="page-content">
+                <div className="page-content" style={{ flex: 1, overflowY: 'auto' }}>
                     <Outlet context={{ syncConfig, user }} />
                 </div>
+
+                {/* Footer */}
+                <footer style={{ padding: '12px 32px', borderTop: '1px solid var(--ubv-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--ubv-text-muted)', background: 'rgba(0,0,0,0.2)' }}>
+                    <div>
+                        Ubuveil MS (c) ARR
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Activity size={12} color={syncReady ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
+                            {syncReady ? 'Sync Active' : 'Sync Paused'}
+                        </div>
+                        <span>v{appVersion} | Last Updated: {lastUpdated}</span>
+                    </div>
+                </footer>
             </main>
         </div>
     );

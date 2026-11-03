@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend supporting keyring-based FileLu credentials, per-user sync lifecycle, and streaming uploads.
+// Purpose: Tauri backend supporting keyring credentials, per-user sync lifecycle, system tray, and alerts.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Emitter, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager, State, WindowEvent};
 use walkdir::WalkDir;
 
 // --- KEYRING ---
@@ -549,6 +551,50 @@ async fn perform_initial_sync(
     Ok(())
 }
 
+// --- IT SUPPORT (PING IT) ---
+
+#[tauri::command]
+async fn send_it_alert(
+    user_name: String,
+    user_org: String,
+    user_dept: String,
+    issue: String,
+) -> Result<(), String> {
+    let (client, bucket) = get_s3_client().await?;
+    let timestamp = Local::now().format("%Y-%m-%dT%H-%M-%S").to_string();
+    let key = format!(
+        "{}/it_alerts/{}_{}.json",
+        user_org,
+        timestamp,
+        user_name.replace(" ", "_")
+    );
+
+    let payload = serde_json::json!({
+        "user_name": user_name,
+        "user_org": user_org,
+        "user_dept": user_dept,
+        "issue": issue,
+        "timestamp": timestamp,
+        "status": "open"
+    });
+
+    let body = ByteStream::from(serde_json::to_vec(&payload).map_err(|e| e.to_string())?);
+
+    client
+        .put_object()
+        .bucket(bucket)
+        .key(&key)
+        .body(body)
+        .content_type("application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send alert: {:?}", e))?;
+
+    // TODO: Integrate Resend API in Phase 4 for email fallback
+    log(&format!("IT Alert saved to S3: {}", key));
+    Ok(())
+}
+
 // --- STORAGE USAGE ---
 
 #[tauri::command]
@@ -753,6 +799,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(AppState {
             watchers: Mutex::new(HashMap::new()),
         })
@@ -770,11 +821,56 @@ pub fn run() {
             get_filelu_credentials_status,
             clear_filelu_credentials,
             start_sync_for_user,
-            stop_sync_for_user
+            stop_sync_for_user,
+            send_it_alert
         ])
-        .setup(|_app| {
+        .setup(|app| {
             log("UMS backend ready");
+
+            // System Tray Setup
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Open Ubuveil MS", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                window.hide().unwrap();
+                api.prevent_close();
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

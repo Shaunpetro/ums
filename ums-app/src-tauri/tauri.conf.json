@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ums-app",
-  "version": "0.1.0",
+  "productName": "Ubuveil Management System",
+  "mainBinaryName": "ums-app",
+  "version": "0.1.2",
   "identifier": "com.petro-malamule.ums-app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,19 +13,27 @@
   "app": {
     "windows": [
       {
-        "title": "ums-app",
-        "width": 800,
-        "height": 600
+        "title": "Ubuveil Management System",
+        "width": 1024,
+        "height": 768,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
     }
   },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
+    "publisher": "ATG (Pty) Ltd",
     "windows": {
       "nsis": {
         "installMode": "perMachine"

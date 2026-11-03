@@ -50,3 +50,27 @@ Approved 2026-11-02. Six decisions recorded in DECISIONS.md as DEC-038 through D
 - Reflects working tree state, not last commit.
 - If lost, the last handover plus `git status` reconstructs everything.
 - Do not put real keys, real secrets, or PII here.
+
+# CURRENT - Live State
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `02-stage-02-installer-updates.md` (to be written at stage close)
+**Current branch:** `stage/02-installer-updates`
+**Stage:** 03 - Branding, System Tray & UX Polish
+**Current work item:** Implementing background sync, tray menu, and Ping IT support skeleton.
+**Files being edited:** `tauri.conf.json`, `Cargo.toml`, `lib.rs`, `AppShell.tsx`, `HelpModal.tsx`
+**Blockers:** None.
+
+---
+
+## Stage 03 Scope (Locked)
+1. **Branding:** Update `productName` to "Ubuveil Management System", `mainBinaryName` to "ums-app", publisher to "ATG (Pty) Ltd". Generate icons from SVGs.
+2. **System Tray:** OneDrive-style minimize to tray. Closing window hides it. Right-click tray menu (Open, Quit).
+3. **Background Sync:** Watcher stays alive in tray. Auto-start on boot.
+4. **Layout & UI:** Footer (`Ubuveil MS (c) ARR` | `v0.1.2 | Last Updated`). Sidebar (FileLu dot, Storage meter, User). Toast notifications instead of alerts.
+5. **Ping IT:** Hybrid S3 + Resend skeleton. Help modal gets a support button that writes an alert to S3.
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.

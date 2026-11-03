@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
+import { useToast } from '../context/ToastContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, Clock, FileImage, FileArchive, FileSpreadsheet } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet } from 'lucide-react';
 
 interface S3Object {
     key: string;
@@ -17,8 +18,8 @@ interface S3Object {
 
 export default function Storage() {
     const { syncConfig, user } = useOutletContext<any>();
+    const { toast } = useToast();
     
-    // Initialize state with the user's personal path
     const [currentPrefix, setCurrentPrefix] = useState<string>(`${user.path}/`);
     const [files, setFiles] = useState<S3Object[]>([]);
     const [selectedItem, setSelectedItem] = useState<S3Object | null>(null);
@@ -29,7 +30,6 @@ export default function Storage() {
     
     const { uploadQueue, addUpload, failUpload, clearUploads } = useUploads();
 
-    // Modals
     const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -44,20 +44,9 @@ export default function Storage() {
             .catch((err) => { setError(err); setLoading(false); });
     };
 
-    // If the user changes (logs out and logs in as someone else), reset the path
-    useEffect(() => {
-        setCurrentPrefix(`${user.path}/`);
-    }, [user]);
-
     useEffect(() => {
         fetchFiles(currentPrefix);
     }, [currentPrefix]);
-
-    useEffect(() => {
-        const handleReset = () => setCurrentPrefix(`${user.path}/`);
-        window.addEventListener('reset-storage-home', handleReset);
-        return () => window.removeEventListener('reset-storage-home', handleReset);
-    }, [user]);
 
     const handleUpload = async () => {
         try {
@@ -65,12 +54,11 @@ export default function Storage() {
             if (selected && typeof selected === 'string') {
                 const fileName = selected.split(/[\\/]/).pop() || 'Unknown file';
                 const jobId = addUpload(fileName);
-
                 invoke('upload_file', { filePath: selected, currentPrefix })
                     .catch((err) => failUpload(jobId, `${err}`));
             }
         } catch (err) {
-            alert(`${err}`);
+            toast(`${err}`, 'error');
         }
     };
 
@@ -88,6 +76,7 @@ export default function Storage() {
         setFiles(prev => prev.filter(f => f.key !== key));
         setSelectedItem(null);
         invoke('delete_object', { key }).catch(() => fetchFiles());
+        toast('Item deleted.', 'info');
     };
 
     const handleShare = async (key: string) => {
@@ -110,9 +99,9 @@ export default function Storage() {
         setDownloading(key);
         try {
             const savedPath = await invoke<string>('download_file', { key });
-            alert(`File downloaded successfully to:\n${savedPath}`);
+            toast(`File downloaded to: ${savedPath}`, 'success');
         } catch (err) {
-            alert(`Download failed: ${err}`);
+            toast(`Download failed: ${err}`, 'error');
         } finally {
             setDownloading(null);
         }
@@ -132,20 +121,19 @@ export default function Storage() {
 
     const getFileVisuals = (fileName: string) => {
         const ext = fileName.split('.').pop()?.toLowerCase() || '';
-        if (['pdf'].includes(ext)) return { icon: <FileText size={24} />, color: '#EB6F65' }; // Coral
-        if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return { icon: <FileText size={24} />, color: '#4B9CD3' }; // Blue
-        if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: <FileSpreadsheet size={24} />, color: '#2BB673' }; // Green
-        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { icon: <FileArchive size={24} />, color: '#F5AB82' }; // Orange
-        if (['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) return { icon: <FileImage size={24} />, color: '#9B59B6' }; // Purple
-        return { icon: <FileText size={24} />, color: 'var(--ubv-text-muted)' }; // Default Gray
+        if (['pdf'].includes(ext)) return { icon: <FileText size={24} />, color: '#EB6F65' };
+        if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return { icon: <FileText size={24} />, color: '#4B9CD3' };
+        if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: <FileSpreadsheet size={24} />, color: '#2BB673' };
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { icon: <FileArchive size={24} />, color: '#F5AB82' };
+        if (['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) return { icon: <FileImage size={24} />, color: '#9B59B6' };
+        return { icon: <FileText size={24} />, color: 'var(--ubv-text-muted)' };
     };
 
     const getFolderVisuals = (key: string) => {
-        // If it's the user's root path, or one level up, use specific icons
         const depth = key.split('/').filter(Boolean).length;
-        if (depth === 1) return { icon: <Building2 size={24} />, color: '#EAB308' }; // Company (Gold)
-        if (depth === 2) return { icon: <Briefcase size={24} />, color: '#a4b5d6' }; // Department (Blue)
-        return { icon: <Folder size={24} />, color: 'var(--ubv-text-muted)' }; // Standard Folder (Gray)
+        if (depth === 1) return { icon: <Building2 size={24} />, color: '#EAB308' }; 
+        if (depth === 2) return { icon: <Briefcase size={24} />, color: '#a4b5d6' }; 
+        return { icon: <Folder size={24} />, color: 'var(--ubv-text-muted)' }; 
     };
 
     const parseFileMeta = (key: string, isFolder: boolean) => {
@@ -162,17 +150,17 @@ export default function Storage() {
     const fileItems = files.filter(f => !f.is_folder);
     const recentFiles = fileItems.slice(0, 3); 
 
-    // --- BREADCRUMB LOGIC ---
-    // We strip the user.path from the currentPrefix so the breadcrumbs stay clean.
-    // e.g. "VSC Mining/DevOps/Petro/Projects/" becomes "Projects/"
-    const relativePath = currentPrefix.replace(`${user.path}/`, '').replace(`${user.path}`, '');
-    const pathSegments = relativePath.split('/').filter(Boolean);
+    const isAtRoot = currentPrefix === '' || currentPrefix === '/';
+    const cleanPrefix = currentPrefix.replace(/\/$/, '');
+    const pathSegments = cleanPrefix.split('/').filter(Boolean);
     
-    let accumulatedPath = user.path;
+    let accumulatedPath = '';
     const breadcrumbs = pathSegments.map((seg) => {
-        accumulatedPath += `/${seg}`;
+        accumulatedPath += `${seg}/`;
         return { name: seg, path: accumulatedPath };
     });
+
+    const isUserHome = currentPrefix === `${user.path}/`;
 
     return (
         <div className="storage-page" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
@@ -200,15 +188,37 @@ export default function Storage() {
                     <div>{loading ? <Loader2 size={16} className="spin" /> : <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--ubv-success)' }}></div>}</div>
                 </div>
 
-                {/* Breadcrumbs mapped to the User's Home */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                    <button className="text-btn" onClick={() => setCurrentPrefix(`${user.path}/`)} style={{ display: 'flex', alignItems: 'center', color: pathSegments.length === 0 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="Go to Workspace Root">
+                    <button 
+                        className="text-btn" 
+                        onClick={() => setCurrentPrefix('')} 
+                        style={{ display: 'flex', alignItems: 'center', color: isAtRoot ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} 
+                        title="Storage Root"
+                    >
                         <Home size={18} />
                     </button>
+                    
+                    <span style={{ color: 'var(--ubv-text-muted)' }}>|</span>
+
+                    <button 
+                        className="text-btn" 
+                        onClick={() => setCurrentPrefix(`${user.path}/`)} 
+                        style={{ display: 'flex', alignItems: 'center', color: isUserHome ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} 
+                        title="My Workspace"
+                    >
+                        <UserIcon size={18} />
+                    </button>
+
                     {breadcrumbs.map((crumb, i) => (
                         <div key={crumb.path} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <ChevronRight size={16} color="var(--ubv-text-muted)" />
-                            <button className="text-btn" onClick={() => setCurrentPrefix(crumb.path)} style={{ fontSize: '16px', color: i === breadcrumbs.length - 1 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }}>{crumb.name}</button>
+                            <button 
+                                className="text-btn" 
+                                onClick={() => setCurrentPrefix(crumb.path)} 
+                                style={{ fontSize: '16px', color: i === breadcrumbs.length - 1 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }}
+                            >
+                                {crumb.name}
+                            </button>
                         </div>
                     ))}
                 </div>
@@ -216,10 +226,10 @@ export default function Storage() {
                 {loading ? (
                     <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>Loading...</div>
                 ) : files.length === 0 ? (
-                    <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>This folder is empty. Drop a file into your local sync folder to see it here.</div>
+                    <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>This folder is empty.</div>
                 ) : (
                     <div>
-                        {currentPrefix === `${user.path}/` && recentFiles.length > 0 && (
+                        {isUserHome && recentFiles.length > 0 && (
                             <div style={{ marginBottom: '32px' }}>
                                 <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <Clock size={16} /> Recent Updates
@@ -388,7 +398,7 @@ export default function Storage() {
                             <>
                                 <p className="marker" style={{ marginBottom: '16px' }}>Anyone with this link can download <strong>{sharingFile.split('/').pop()}</strong> for the next 1 hour.</p>
                                 <div className="form-group"><input type="text" className="form-input" value={shareUrl || ''} readOnly /></div>
-                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="action-btn" onClick={() => { navigator.clipboard.writeText(shareUrl || ''); alert("Copied!"); }}>Copy Link</button></div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="action-btn" onClick={() => { navigator.clipboard.writeText(shareUrl || ''); toast('Link copied!', 'success'); }}>Copy Link</button></div>
                             </>
                         )}
                     </div>
