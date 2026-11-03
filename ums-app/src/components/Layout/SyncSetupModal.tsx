@@ -25,9 +25,9 @@ export default function SyncSetupModal({ onComplete, userPath }: Props) {
 
             if (selected && typeof selected === 'string') {
                 setLoading(true);
-                await invoke('save_sync_config', { 
-                    localPath: selected, 
-                    syncTargetPrefix: userPath 
+                await invoke('save_sync_config', {
+                    localPath: selected,
+                    syncTargetPrefix: userPath
                 });
                 onComplete(selected, userPath);
             }
@@ -57,8 +57,8 @@ export default function SyncSetupModal({ onComplete, userPath }: Props) {
                     </div>
                 )}
 
-                <button 
-                    className="action-btn" 
+                <button
+                    className="action-btn"
                     style={{ width: '100%', padding: '16px', fontSize: '16px' }}
                     onClick={handleSelectFolder}
                     disabled={loading}
