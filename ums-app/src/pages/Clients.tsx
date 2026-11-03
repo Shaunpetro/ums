@@ -2,7 +2,7 @@
 // Purpose: CRM Directory for managing client companies, contacts, and interaction history.
 
 import { useState } from 'react';
-import { Building2, Mail, Phone, MapPin, ExternalLink, Activity } from 'lucide-react';
+import { Building2, Mail, Phone, MapPin, ExternalLink } from 'lucide-react';
 
 const MOCK_CLIENTS = [
     {
@@ -87,12 +87,12 @@ export default function Clients() {
 
             {/* Master-Detail Layout */}
             <div className="tender-layout">
-                
+
                 {/* Left Side: Client List */}
                 <div className="tender-list">
                     {MOCK_CLIENTS.map(client => (
-                        <div 
-                            key={client.id} 
+                        <div
+                            key={client.id}
                             className={`tender-list-item ${selectedClientId === client.id ? 'active' : ''}`}
                             onClick={() => setSelectedClientId(client.id)}
                         >
@@ -107,7 +107,7 @@ export default function Clients() {
 
                 {/* Right Side: Client Details */}
                 <div className="tender-detail glass-panel" style={{ padding: '24px' }}>
-                    
+
                     {/* Header */}
                     <div className="flex-between" style={{ alignItems: 'flex-start', borderBottom: '1px solid var(--ubv-border)', paddingBottom: '16px' }}>
                         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>

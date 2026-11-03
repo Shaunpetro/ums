@@ -1,7 +1,8 @@
 // Path: ums-app/src/context/AuthContext.tsx
-// Purpose: Mock Authentication context for user selection and tenant mapping.
+// Purpose: Mock Authentication context for user selection and tenant mapping with sync lifecycle hooks.
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface User {
     id: string;
@@ -24,7 +25,7 @@ export const MOCK_USERS: User[] = [
 interface AuthContextType {
     user: User | null;
     login: (user: User) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -40,7 +41,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('ums-current-user', JSON.stringify(selectedUser));
     };
 
-    const logout = () => {
+    const logout = async () => {
+        if (user) {
+            try {
+                await invoke('stop_sync_for_user', { userPath: user.path });
+            } catch (err) {
+                console.error('Failed to stop sync on logout:', err);
+            }
+        }
         setUser(null);
         localStorage.removeItem('ums-current-user');
     };

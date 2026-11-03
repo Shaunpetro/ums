@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, Share2, Trash2, X, RefreshCw, CheckCircle2, Home, Clock, FileImage, FileArchive, FileSpreadsheet, Download } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, Clock, FileImage, FileArchive, FileSpreadsheet } from 'lucide-react';
 
 interface S3Object {
     key: string;

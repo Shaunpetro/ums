@@ -9,6 +9,7 @@ export interface UploadJob {
     fileName: string;
     status: 'uploading' | 'success' | 'error';
     error?: string;
+    message?: string;
 }
 
 interface UploadContextType {
@@ -26,7 +27,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         // Listen for global success events from Rust
-        const unlistenSuccess = listen<string>('upload-success', (event) => {
+        const unlistenSuccess = listen<string>('upload-success', () => {
             setUploadQueue(prev => {
                 // Find the most recent uploading job and mark it success
                 const index = prev.findIndex(job => job.status === 'uploading');
@@ -45,7 +46,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
                 const index = prev.findIndex(job => job.status === 'uploading');
                 if (index !== -1) {
                     const newQueue = [...prev];
-                    newQueue[index] = { ...newQueue[index], status: 'error', error: event.payload };
+                    newQueue[index] = { ...newQueue[index], status: 'error', error: event.payload, message: event.payload };
                     return newQueue;
                 }
                 return prev;
@@ -68,11 +69,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     };
 
     const failUpload = (id: string, error: string) => {
-        setUploadQueue(prev => prev.map(job => job.id === id ? { ...job, status: 'error', error } : job));
+        setUploadQueue(prev => prev.map(job => job.id === id ? { ...job, status: 'error', error, message: error } : job));
     };
 
     const clearUploads = () => setUploadQueue([]);
-    
+
     const removeUpload = (id: string) => {
         setUploadQueue(prev => prev.filter(job => job.id !== id));
     };

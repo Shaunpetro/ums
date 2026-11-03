@@ -1,5 +1,5 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout wrapper with dynamic live storage count and multi-user config checks.
+// Purpose: Main layout with FileLu credential gate, per-user sync lifecycle, and live storage count.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut } from 'lucide-react';
@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAuth } from '../../context/AuthContext';
 import SyncSetupModal from './SyncSetupModal';
+import FileLuSetupModal from './FileLuSetupModal';
 import './AppShell.css';
 
 const NAV_ITEMS = [
@@ -25,11 +26,14 @@ export default function AppShell() {
         const savedTheme = localStorage.getItem('ums-theme');
         return savedTheme ? savedTheme === 'dark' : true;
     });
-    
+
+    const [credChecked, setCredChecked] = useState(false);
+    const [credsSet, setCredsSet] = useState(false);
+    const [syncChecked, setSyncChecked] = useState(false);
+    const [syncReady, setSyncReady] = useState(false);
     const [syncConfig, setSyncConfig] = useState<any>(null);
-    const [checkingConfig, setCheckingConfig] = useState(true);
     const [storageUsed, setStorageUsed] = useState<number>(0);
-    
+
     const location = useLocation();
 
     useEffect(() => {
@@ -42,25 +46,57 @@ export default function AppShell() {
         }
     }, [isDarkMode]);
 
-    // Fetch Configs (Multi-User)
+    // Check FileLu credentials once per logged-in user
     useEffect(() => {
         if (!user) return;
+        setCredChecked(false);
+        invoke<{ all_set: boolean }>('get_filelu_credentials_status')
+            .then(status => {
+                setCredsSet(status.all_set);
+                setCredChecked(true);
+            })
+            .catch(err => {
+                console.error('Failed to check FileLu credentials:', err);
+                setCredsSet(false);
+                setCredChecked(true);
+            });
+    }, [user]);
+
+    // Per-user sync lifecycle: find config, start watcher
+    useEffect(() => {
+        if (!user || !credsSet) return;
+        setSyncChecked(false);
         invoke<any[]>('get_all_sync_configs')
-            .then((configs) => {
-                // Find the config that belongs to the currently logged in user
-                const userConfig = configs.find(c => c.sync_target_prefix === `${user.path}/`);
-                if (userConfig) {
-                    setSyncConfig(userConfig);
+            .then(configs => {
+                const cfg = configs.find(c => c.sync_target_prefix === `${user.path}/`);
+                if (cfg) {
+                    setSyncConfig(cfg);
+                    invoke<boolean>('start_sync_for_user', { userPath: user.path })
+                        .then(started => {
+                            setSyncReady(started);
+                            setSyncChecked(true);
+                        })
+                        .catch(err => {
+                            console.error('Failed to start sync:', err);
+                            setSyncReady(false);
+                            setSyncChecked(true);
+                        });
                 } else {
                     setSyncConfig(null);
+                    setSyncReady(false);
+                    setSyncChecked(true);
                 }
-                setCheckingConfig(false);
             })
-            .catch(() => setCheckingConfig(false));
-    }, [user]);
+            .catch(err => {
+                console.error('Failed to load sync configs:', err);
+                setSyncReady(false);
+                setSyncChecked(true);
+            });
+    }, [user, credsSet]);
 
     // Fetch Storage Usage
     useEffect(() => {
+        if (!credsSet) return;
         const fetchUsage = () => {
             invoke<number>('get_storage_usage')
                 .then((bytes) => setStorageUsed(bytes))
@@ -68,9 +104,9 @@ export default function AppShell() {
         };
 
         fetchUsage();
-        const interval = setInterval(fetchUsage, 30000); // Refresh every 30s
+        const interval = setInterval(fetchUsage, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [credsSet]);
 
     const getSearchPlaceholder = () => {
         const current = NAV_ITEMS.find(item => item.path === location.pathname);
@@ -85,7 +121,10 @@ export default function AppShell() {
     };
 
     if (!user) return null;
-    if (checkingConfig) return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-bg-primary)' }}>Loading UMS...</div>;
+
+    if (!credChecked) {
+        return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-bg-primary)' }}>Loading UMS...</div>;
+    }
 
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
 
@@ -95,10 +134,20 @@ export default function AppShell() {
             <div className="bg-orb bg-orb-2"></div>
             <div className="bg-orb bg-orb-3"></div>
 
-            {!syncConfig && (
-                <SyncSetupModal 
-                    userPath={user.path} 
-                    onComplete={(path, prefix) => setSyncConfig({ local_path: path, sync_target_prefix: prefix })} 
+            {!credsSet && (
+                <FileLuSetupModal
+                    onComplete={() => setCredsSet(true)}
+                    onLogout={logout}
+                />
+            )}
+
+            {credsSet && syncChecked && !syncReady && (
+                <SyncSetupModal
+                    userPath={user.path}
+                    onComplete={(path, prefix) => {
+                        setSyncConfig({ local_path: path, sync_target_prefix: prefix });
+                        setSyncReady(true);
+                    }}
                 />
             )}
 
@@ -117,9 +166,9 @@ export default function AppShell() {
 
                 <nav className="nav-menu">
                     {NAV_ITEMS.map((item) => (
-                        <NavLink 
-                            key={item.path} 
-                            to={item.path} 
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
                             {item.icon}
@@ -148,7 +197,7 @@ export default function AppShell() {
                                 <span className="user-name">{user.name}</span>
                                 <span className="user-role">{user.role}</span>
                             </div>
-                            <button className="icon-btn" onClick={logout} title="Log out">
+                            <button className="icon-btn" onClick={() => { void logout(); }} title="Log out">
                                 <LogOut size={16} />
                             </button>
                         </div>
@@ -165,7 +214,7 @@ export default function AppShell() {
                         <div className="company-brand">
                             <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
                         </div>
-                        
+
                         <button className="icon-btn"><HelpCircle size={20} /></button>
                         <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
                             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
