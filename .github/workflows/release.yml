@@ -1,5 +1,5 @@
 # Path: .github/workflows/release.yml
-# Purpose: Build signed NSIS installer on tag push, publish to GitHub Releases with latest.json for Tauri updater.
+# Purpose: Build signed NSIS installer, publish to Releases, and push latest.json to updates branch.
 
 name: Release
 
@@ -59,3 +59,25 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: --target x86_64-pc-windows-msvc
+
+      - name: Commit latest.json to updates branch
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Find the generated latest.json in the build output
+          $latestJson = Get-ChildItem -Path "ums-app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/latest.json"
+          
+          # Create or switch to the updates branch
+          git fetch origin updates
+          git checkout updates || git checkout -b updates
+          
+          # Copy the new file to the root of the repository
+          Copy-Item $latestJson.FullName -Destination "latest.json" -Force
+          
+          # Commit and push the updated manifest
+          git add latest.json
+          git commit -m "chore: update manifest for ${{ github.ref_name }}" || exit 0
+          git push origin updates
+        shell: pwsh
