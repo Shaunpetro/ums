@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend with background sync, tray menu, keyring credentials, and IT alert polling.
+// Purpose: Tauri backend with background sync, tray menu, keyring credentials, IT alert polling, and file previews.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -7,6 +7,7 @@ use aws_sdk_s3::config::{
 };
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
+use base64::{engine::general_purpose, Engine as _};
 use chrono::Local;
 use keyring::Entry;
 use notify::{RecursiveMode, Watcher};
@@ -272,7 +273,6 @@ async fn start_sync_for_user(
         None => return Ok(false),
     };
 
-    // Check if the local folder still exists (e.g. user didn't rename it)
     if !Path::new(&config.local_path).exists() {
         log(&format!("Local sync folder missing: {}", config.local_path));
         return Ok(false);
@@ -567,6 +567,24 @@ async fn perform_initial_sync(
     }
     log("Initial sync finished.");
     Ok(())
+}
+
+// --- FILE PREVIEW ---
+
+#[tauri::command]
+async fn get_file_preview_data(key: String) -> Result<String, String> {
+    let (client, bucket) = get_s3_client().await?;
+    let resp = client
+        .get_object()
+        .bucket(bucket)
+        .key(&key)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch file: {:?}", e))?;
+        
+    let bytes = resp.body.collect().await.map_err(|e| e.to_string())?.into_bytes();
+    let b64 = general_purpose::STANDARD.encode(&bytes);
+    Ok(b64)
 }
 
 // --- IT SUPPORT (PING IT) ---
@@ -875,6 +893,7 @@ pub fn run() {
             create_folder,
             delete_object,
             get_share_url,
+            get_file_preview_data,
             upload_file,
             download_file,
             get_all_sync_configs,

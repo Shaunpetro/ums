@@ -7,7 +7,8 @@ import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { useToast } from '../context/ToastContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen, Eye } from 'lucide-react';
+import FileViewerModal from '../components/Layout/FileViewerModal';
 
 interface S3Object {
     key: string;
@@ -25,9 +26,11 @@ export default function Storage() {
     const [selectedItem, setSelectedItem] = useState<S3Object | null>(null);
     
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [downloading, setDownloading] = useState<string | null>(null);
     
+    // File Viewer State
+    const [viewingFile, setViewingFile] = useState<{ key: string, name: string } | null>(null);
+
     const { uploadQueue, addUpload, failUpload, clearUploads } = useUploads();
 
     const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
@@ -40,8 +43,14 @@ export default function Storage() {
         setLoading(true);
         setSelectedItem(null); 
         invoke<S3Object[]>('list_files', { prefix })
-            .then((data) => { setFiles(data); setError(null); setLoading(false); })
-            .catch((err) => { setError(err); setLoading(false); });
+            .then((data) => { 
+                setFiles(data); 
+                setLoading(false); 
+            })
+            .catch((err) => { 
+                toast(`Failed to list files: ${err}`, 'error');
+                setLoading(false); 
+            });
     };
 
     useEffect(() => {
@@ -197,14 +206,6 @@ export default function Storage() {
                         <button className="outline-btn" onClick={() => setIsFolderModalOpen(true)}>New Folder</button>
                         <button className="action-btn" onClick={handleUpload}>Upload File</button>
                     </div>
-                </div>
-
-                <div className="glass-panel flex-between" style={{ padding: '16px 24px', marginBottom: '24px', borderLeft: error ? '4px solid var(--ubv-danger)' : '4px solid var(--ubv-success)' }}>
-                    <div>
-                        <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>FileLu Connection</h3>
-                        <p className="marker">{loading ? 'Syncing...' : error ? `Error: ${error}` : 'Online'}</p>
-                    </div>
-                    <div>{loading ? <Loader2 size={16} className="spin" /> : <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--ubv-success)' }}></div>}</div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
@@ -383,9 +384,21 @@ export default function Storage() {
                         
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '32px' }}>
                             {!selectedItem.is_folder && (
-                                <button className="action-btn" style={{ width: '100%' }} onClick={() => handleDownload(selectedItem.key)} disabled={downloading === selectedItem.key}>
-                                    {downloading === selectedItem.key ? 'Downloading...' : 'Download to PC'}
-                                </button>
+                                <>
+                                    <button 
+                                        className="action-btn" 
+                                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} 
+                                        onClick={() => setViewingFile({ 
+                                            key: selectedItem.key, 
+                                            name: parseFileMeta(selectedItem.key, false).name 
+                                        })}
+                                    >
+                                        <Eye size={16} /> Preview File
+                                    </button>
+                                    <button className="outline-btn" style={{ width: '100%' }} onClick={() => handleDownload(selectedItem.key)} disabled={downloading === selectedItem.key}>
+                                        {downloading === selectedItem.key ? 'Downloading...' : 'Download to PC'}
+                                    </button>
+                                </>
                             )}
                             <div style={{ display: 'flex', gap: '12px' }}>
                                 {!selectedItem.is_folder && <button className="outline-btn" style={{ flex: 1 }} onClick={() => handleShare(selectedItem.key)}>Share Link</button>}
@@ -422,6 +435,14 @@ export default function Storage() {
                         )}
                     </div>
                 </div>
+            )}
+
+            {viewingFile && (
+                <FileViewerModal 
+                    fileKey={viewingFile.key} 
+                    fileName={viewingFile.name} 
+                    onClose={() => setViewingFile(null)} 
+                />
             )}
         </div>
     );

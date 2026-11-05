@@ -38,7 +38,6 @@ export default function AppShell() {
     const [syncReady, setSyncReady] = useState(false);
     const [syncConfig, setSyncConfig] = useState<any>(null);
     
-    // Connection status
     const [storageUsed, setStorageUsed] = useState<number>(0);
     const [apiError, setApiError] = useState<string | null>(null);
 
@@ -58,7 +57,6 @@ export default function AppShell() {
         }
     }, [isDarkMode]);
 
-    // Check FileLu credentials
     useEffect(() => {
         if (!user) return;
         setCredChecked(false);
@@ -74,7 +72,6 @@ export default function AppShell() {
             });
     }, [user]);
 
-    // Per-user sync lifecycle
     useEffect(() => {
         if (!user || !credsSet) return;
         setSyncChecked(false);
@@ -106,14 +103,13 @@ export default function AppShell() {
             });
     }, [user, credsSet]);
 
-    // Fetch Storage Usage (Every 1 hour to save API calls)
     useEffect(() => {
         if (!credsSet) return;
         const fetchUsage = () => {
             invoke<number>('get_storage_usage')
                 .then((bytes) => {
                     setStorageUsed(bytes);
-                    setApiError(null); // Connected successfully
+                    setApiError(null); 
                 })
                 .catch((err) => {
                     console.error("Storage usage check failed:", err);
@@ -125,8 +121,8 @@ export default function AppShell() {
                 });
         };
 
-        fetchUsage(); // Fetch immediately on load
-        const interval = setInterval(fetchUsage, 3600000); // 1 hour = 3,600,000 ms
+        fetchUsage();
+        const interval = setInterval(fetchUsage, 3600000); 
         return () => clearInterval(interval);
     }, [credsSet]);
 
@@ -149,8 +145,7 @@ export default function AppShell() {
     }
 
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
-    const lastUpdated = new Date().toLocaleDateString(); // Placeholder for dynamic exe timestamp
-
+    const lastUpdated = new Date().toLocaleDateString();
     const isConnected = credsSet && !apiError;
 
     return (
@@ -184,11 +179,8 @@ export default function AppShell() {
 
             <aside className="sidebar glass-panel">
                 <div className="brand">
-                    <div className="logo-circle"></div>
-                    <div className="brand-text-group">
-                        <span className="brand-title">Ubuveil</span>
-                        <span className="brand-subtitle">Management System</span>
-                    </div>
+                    {/* Replaced logo-circle with actual SVG */}
+                    <img src="/logo-horizontal-white.svg" alt="Ubuveil" style={{ height: '32px', marginRight: '12px' }} />
                 </div>
 
                 <button className="new-btn">
@@ -209,7 +201,6 @@ export default function AppShell() {
                 </nav>
 
                 <div className="sidebar-bottom">
-                    {/* FileLu Status - Clickable */}
                     <button 
                         className="text-btn" 
                         onClick={() => setIsCredModalOpen(true)}
@@ -272,7 +263,6 @@ export default function AppShell() {
                     <Outlet context={{ syncConfig, user }} />
                 </div>
 
-                {/* Footer */}
                 <footer style={{ padding: '12px 32px', borderTop: '1px solid var(--ubv-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--ubv-text-muted)', background: 'rgba(0,0,0,0.2)' }}>
                     <div>
                         Ubuveil MS (c) ARR
