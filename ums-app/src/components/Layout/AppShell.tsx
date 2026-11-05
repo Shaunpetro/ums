@@ -1,5 +1,5 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with dynamic footer, tray-aware UI, and clickable FileLu status.
+// Purpose: Main layout with dynamic footer, tray-aware UI, and centralized FileLu connection state.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity } from 'lucide-react';
@@ -38,7 +38,9 @@ export default function AppShell() {
     const [syncReady, setSyncReady] = useState(false);
     const [syncConfig, setSyncConfig] = useState<any>(null);
     
+    // Centralized Connection State
     const [storageUsed, setStorageUsed] = useState<number>(0);
+    const [isConnected, setIsConnected] = useState(true);
     const [apiError, setApiError] = useState<string | null>(null);
 
     const location = useLocation();
@@ -103,28 +105,44 @@ export default function AppShell() {
             });
     }, [user, credsSet]);
 
+    // Heartbeat Connection Check (Runs every 1 hour)
     useEffect(() => {
         if (!credsSet) return;
-        const fetchUsage = () => {
+        
+        const checkConnection = () => {
             invoke<number>('get_storage_usage')
                 .then((bytes) => {
                     setStorageUsed(bytes);
+                    setIsConnected(true);
                     setApiError(null); 
                 })
                 .catch((err) => {
                     console.error("Storage usage check failed:", err);
+                    let errorMsg = "Connection failed.";
                     if (err.includes("AccessDenied") || err.includes("limit exceeded")) {
-                        setApiError("FileLu API limit exceeded.");
-                    } else {
-                        setApiError("Connection failed.");
+                        errorMsg = "FileLu API limit exceeded.";
+                    } else if (err.includes("dispatch failure") || err.includes("network")) {
+                        errorMsg = "Network error. Check your internet.";
                     }
+                    setIsConnected(false);
+                    setApiError(errorMsg);
                 });
         };
 
-        fetchUsage();
-        const interval = setInterval(fetchUsage, 3600000); 
+        checkConnection();
+        const interval = setInterval(checkConnection, 3600000); 
         return () => clearInterval(interval);
     }, [credsSet]);
+
+    const reportCloudStatus = (success: boolean, errorMsg?: string) => {
+        if (success) {
+            setIsConnected(true);
+            setApiError(null);
+        } else {
+            setIsConnected(false);
+            if (errorMsg) setApiError(errorMsg);
+        }
+    };
 
     const getSearchPlaceholder = () => {
         const current = NAV_ITEMS.find(item => item.path === location.pathname);
@@ -146,7 +164,10 @@ export default function AppShell() {
 
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
     const lastUpdated = new Date().toLocaleDateString();
-    const isConnected = credsSet && !apiError;
+    const finalConnectedState = credsSet && isConnected;
+    
+    // True sync status depends on BOTH local watcher and cloud connection
+    const isFullySyncing = syncReady && finalConnectedState;
 
     return (
         <div className="app-container">
@@ -156,14 +177,26 @@ export default function AppShell() {
 
             {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
 
-            {(!credsSet || isCredModalOpen) && (
+            {(!credsSet) && (
                 <FileLuSetupModal
                     onComplete={() => {
                         setCredsSet(true);
+                        setIsConnected(true);
+                        setApiError(null);
+                    }}
+                    onLogout={logout}
+                />
+            )}
+
+            {credsSet && isCredModalOpen && (
+                <FileLuSetupModal
+                    onComplete={() => {
+                        setIsConnected(true);
+                        setApiError(null);
                         setIsCredModalOpen(false);
                     }}
-                    onLogout={!credsSet ? logout : undefined}
-                    onClose={!credsSet ? undefined : () => setIsCredModalOpen(false)}
+                    onClose={() => setIsCredModalOpen(false)}
+                    apiError={apiError}
                 />
             )}
 
@@ -179,8 +212,22 @@ export default function AppShell() {
 
             <aside className="sidebar glass-panel">
                 <div className="brand">
-                    {/* Replaced logo-circle with actual SVG */}
-                    <img src="/logo-horizontal-white.svg" alt="Ubuveil" style={{ height: '32px', marginRight: '12px' }} />
+                    {/* Fallback in case logo fails to load */}
+                    <img 
+                        src="/logo-horizontal-white.svg" 
+                        alt="Ubuveil" 
+                        style={{ height: '32px', marginRight: '12px' }} 
+                        onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent) {
+                                const text = document.createElement('span');
+                                text.innerText = 'UBUVEIL';
+                                text.className = 'brand-title';
+                                parent.appendChild(text);
+                            }
+                        }}
+                    />
                 </div>
 
                 <button className="new-btn">
@@ -207,9 +254,9 @@ export default function AppShell() {
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '12px', width: '100%', justifyContent: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer' }}
                         title="Click to reconnect or change keys"
                     >
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
-                        <span className="marker" style={{ fontSize: '12px', fontWeight: 600, color: isConnected ? 'var(--ubv-text-main)' : 'var(--ubv-danger)' }}>
-                            FileLu {isConnected ? 'Connected' : 'Disconnected'}
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: finalConnectedState ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
+                        <span className="marker" style={{ fontSize: '12px', fontWeight: 600, color: finalConnectedState ? 'var(--ubv-text-main)' : 'var(--ubv-danger)' }}>
+                            FileLu {finalConnectedState ? 'Connected' : 'Disconnected'}
                         </span>
                     </button>
 
@@ -260,7 +307,7 @@ export default function AppShell() {
                 </header>
 
                 <div className="page-content" style={{ flex: 1, overflowY: 'auto' }}>
-                    <Outlet context={{ syncConfig, user }} />
+                    <Outlet context={{ syncConfig, user, reportCloudStatus }} />
                 </div>
 
                 <footer style={{ padding: '12px 32px', borderTop: '1px solid var(--ubv-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--ubv-text-muted)', background: 'rgba(0,0,0,0.2)' }}>
@@ -269,8 +316,8 @@ export default function AppShell() {
                     </div>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Activity size={12} color={syncReady ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
-                            {syncReady ? 'Sync Active' : 'Sync Paused'}
+                            <Activity size={12} color={isFullySyncing ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
+                            {isFullySyncing ? 'Sync Active' : 'Sync Paused'}
                         </div>
                         <span>v{appVersion} | Last Updated: {lastUpdated}</span>
                     </div>

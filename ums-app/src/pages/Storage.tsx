@@ -1,5 +1,5 @@
 // Path: ums-app/src/pages/Storage.tsx
-// Purpose: Cloud Drive UI mapped to the logged-in user's tenant path.
+// Purpose: Cloud Drive UI with local fallback, global status reporting, and double-click file viewing.
 
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -7,7 +7,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { useToast } from '../context/ToastContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen, Eye } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen, Eye, WifiOff } from 'lucide-react';
 import FileViewerModal from '../components/Layout/FileViewerModal';
 
 interface S3Object {
@@ -18,7 +18,7 @@ interface S3Object {
 }
 
 export default function Storage() {
-    const { syncConfig, user } = useOutletContext<any>();
+    const { syncConfig, user, reportCloudStatus } = useOutletContext<any>();
     const { toast } = useToast();
     
     const [currentPrefix, setCurrentPrefix] = useState<string>(`${user.path}/`);
@@ -27,9 +27,10 @@ export default function Storage() {
     
     const [loading, setLoading] = useState(true);
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
     
-    // File Viewer State
-    const [viewingFile, setViewingFile] = useState<{ key: string, name: string } | null>(null);
+    // Added lastModified to viewingFile state
+    const [viewingFile, setViewingFile] = useState<{ key: string, name: string, lastModified: string | null } | null>(null);
 
     const { uploadQueue, addUpload, failUpload, clearUploads } = useUploads();
 
@@ -45,11 +46,31 @@ export default function Storage() {
         invoke<S3Object[]>('list_files', { prefix })
             .then((data) => { 
                 setFiles(data); 
+                setIsOffline(false);
                 setLoading(false); 
+                reportCloudStatus(true); 
             })
             .catch((err) => { 
-                toast(`Failed to list files: ${err}`, 'error');
-                setLoading(false); 
+                reportCloudStatus(false, `Cloud error: ${err}`); 
+                if (syncConfig?.local_path) {
+                    invoke<S3Object[]>('list_local_files', { 
+                        localRoot: syncConfig.local_path, 
+                        currentPrefix: prefix,
+                        userPath: user.path
+                    }).then(localFiles => {
+                        setFiles(localFiles);
+                        setIsOffline(true);
+                        setLoading(false);
+                    }).catch(() => {
+                        setLoading(false);
+                        setIsOffline(true);
+                        toast(`Failed to fetch files. Please check connection.`, 'error', 0);
+                    });
+                } else {
+                    setLoading(false);
+                    setIsOffline(true);
+                    toast(`Failed to list files: ${err}`, 'error', 0);
+                }
             });
     };
 
@@ -58,6 +79,10 @@ export default function Storage() {
     }, [currentPrefix]);
 
     const handleUpload = async () => {
+        if (isOffline) {
+            toast('Cannot upload while offline. Please reconnect to FileLu.', 'error');
+            return;
+        }
         try {
             const selected = await open({ multiple: false, title: 'Select a file' });
             if (selected && typeof selected === 'string') {
@@ -73,6 +98,10 @@ export default function Storage() {
 
     const handleCreateFolder = () => {
         if (!newFolderName.trim()) return;
+        if (isOffline) {
+            toast('Cannot create folders while offline.', 'error');
+            return;
+        }
         const newKey = `${currentPrefix ? currentPrefix + '/' : ''}${newFolderName}/`;
         setFiles(prev => [...prev, { key: newKey, size: 0, is_folder: true, last_modified: null }]);
         setIsFolderModalOpen(false);
@@ -81,6 +110,10 @@ export default function Storage() {
     };
 
     const handleDelete = async (key: string) => {
+        if (isOffline) {
+            toast('Cannot delete files while offline.', 'error');
+            return;
+        }
         if (!window.confirm("Are you sure you want to delete this? This cannot be undone.")) return;
         setFiles(prev => prev.filter(f => f.key !== key));
         setSelectedItem(null);
@@ -89,6 +122,10 @@ export default function Storage() {
     };
 
     const handleShare = async (key: string) => {
+        if (isOffline) {
+            toast('Cannot share files while offline.', 'error');
+            return;
+        }
         setSharingFile(key);
         setShareUrl(null);
         setShareError(null);
@@ -105,6 +142,10 @@ export default function Storage() {
     };
 
     const handleDownload = async (key: string) => {
+        if (isOffline) {
+            toast('Cannot download from cloud while offline. Check your local folder.', 'error');
+            return;
+        }
         setDownloading(key);
         try {
             const savedPath = await invoke<string>('download_file', { key });
@@ -208,37 +249,26 @@ export default function Storage() {
                     </div>
                 </div>
 
+                {isOffline && (
+                    <div className="glass-panel flex-between" style={{ padding: '16px 24px', marginBottom: '24px', borderLeft: '4px solid var(--ubv-warning)', background: 'rgba(245, 171, 130, 0.1)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <WifiOff size={24} color="var(--ubv-warning)" />
+                            <div>
+                                <h3 style={{ fontSize: '16px', marginBottom: '4px', color: 'var(--ubv-warning)' }}>Offline Mode</h3>
+                                <p className="marker">Showing local files. Cloud sync is paused until the connection is restored.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-                    <button 
-                        className="text-btn" 
-                        onClick={() => setCurrentPrefix('')} 
-                        style={{ display: 'flex', alignItems: 'center', color: isAtRoot ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} 
-                        title="Storage Root"
-                    >
-                        <Home size={18} />
-                    </button>
-                    
+                    <button className="text-btn" onClick={() => setCurrentPrefix('')} style={{ display: 'flex', alignItems: 'center', color: isAtRoot ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="Storage Root"><Home size={18} /></button>
                     <span style={{ color: 'var(--ubv-text-muted)' }}>|</span>
-
-                    <button 
-                        className="text-btn" 
-                        onClick={() => setCurrentPrefix(`${user.path}/`)} 
-                        style={{ display: 'flex', alignItems: 'center', color: isUserHome ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} 
-                        title="My Workspace"
-                    >
-                        <UserIcon size={18} />
-                    </button>
-
+                    <button className="text-btn" onClick={() => setCurrentPrefix(`${user.path}/`)} style={{ display: 'flex', alignItems: 'center', color: isUserHome ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="My Workspace"><UserIcon size={18} /></button>
                     {breadcrumbs.map((crumb, i) => (
                         <div key={crumb.path} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <ChevronRight size={16} color="var(--ubv-text-muted)" />
-                            <button 
-                                className="text-btn" 
-                                onClick={() => setCurrentPrefix(crumb.path)} 
-                                style={{ fontSize: '16px', color: i === breadcrumbs.length - 1 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }}
-                            >
-                                {crumb.name}
-                            </button>
+                            <button className="text-btn" onClick={() => setCurrentPrefix(crumb.path)} style={{ fontSize: '16px', color: i === breadcrumbs.length - 1 ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }}>{crumb.name}</button>
                         </div>
                     ))}
                 </div>
@@ -251,15 +281,20 @@ export default function Storage() {
                     <div>
                         {isUserHome && recentFiles.length > 0 && (
                             <div style={{ marginBottom: '32px' }}>
-                                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Clock size={16} /> Recent Updates
-                                </h3>
+                                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Clock size={16} /> Recent Updates</h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
                                     {recentFiles.map(file => {
                                         const visuals = getFileVisuals(file.key);
                                         const { name } = parseFileMeta(file.key, false);
                                         return (
-                                            <div key={`recent-${file.key}`} className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => setSelectedItem(file)}>
+                                            <div 
+                                                key={`recent-${file.key}`} 
+                                                className="glass-panel" 
+                                                style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} 
+                                                onClick={() => setSelectedItem(file)}
+                                                onDoubleClick={() => setViewingFile({ key: file.key, name: parseFileMeta(file.key, false).name, lastModified: file.last_modified })}
+                                                title="Double click to open"
+                                            >
                                                 <div style={{ color: visuals.color }}>{visuals.icon}</div>
                                                 <div>
                                                     <div style={{ fontWeight: 500, fontSize: '14px', wordBreak: 'break-all' }}>{name}</div>
@@ -280,11 +315,7 @@ export default function Storage() {
                                         const { name } = parseFileMeta(folder.key, true);
                                         const visuals = getFolderVisuals(folder.key);
                                         return (
-                                            <div 
-                                                key={folder.key} className="glass-panel" 
-                                                style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === folder.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }}
-                                                onClick={() => setSelectedItem(folder)}
-                                            >
+                                            <div key={folder.key} className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === folder.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }} onClick={() => setSelectedItem(folder)}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', userSelect: 'none' }} onDoubleClick={() => setCurrentPrefix(folder.key)}>
                                                     <div style={{ color: visuals.color }}>{visuals.icon}</div>
                                                     <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
@@ -305,15 +336,16 @@ export default function Storage() {
                                         const { name } = parseFileMeta(file.key, false);
                                         return (
                                             <div 
-                                                key={file.key} className="glass-panel" 
-                                                style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === file.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }}
+                                                key={file.key} 
+                                                className="glass-panel" 
+                                                style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === file.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }} 
                                                 onClick={() => setSelectedItem(file)}
+                                                onDoubleClick={() => setViewingFile({ key: file.key, name: parseFileMeta(file.key, false).name, lastModified: file.last_modified })}
+                                                title="Double click to open"
                                             >
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', userSelect: 'none' }}>
                                                     <div style={{ color: visuals.color }}>{visuals.icon}</div>
-                                                    <div>
-                                                        <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
-                                                    </div>
+                                                    <div><div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div></div>
                                                 </div>
                                                 <div className="flex-between" style={{ marginTop: 'auto' }}>
                                                     <span className="marker" style={{ fontSize: '11px', textTransform: 'uppercase' }}>{formatSize(file.size)}</span>
@@ -344,11 +376,7 @@ export default function Storage() {
                                         {job.status === 'success' && <CheckCircle2 size={14} color="var(--ubv-success)" />}
                                         {job.status === 'error' && <AlertCircle size={14} color="var(--ubv-danger)" />}
                                     </div>
-                                    {job.message && (
-                                        <div style={{ fontSize: '11px', color: job.status === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-text-muted)', marginTop: '4px' }}>
-                                            {job.message}
-                                        </div>
-                                    )}
+                                    {job.message && <div style={{ fontSize: '11px', color: job.status === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-text-muted)', marginTop: '4px' }}>{job.message}</div>}
                                 </div>
                             ))}
                         </div>
@@ -365,17 +393,9 @@ export default function Storage() {
                 ) : (
                     <div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px' }}>
-                            {selectedItem.is_folder ? (
-                                <div style={{ color: getFolderVisuals(selectedItem.key).color }}>{getFolderVisuals(selectedItem.key).icon}</div>
-                            ) : (
-                                <div style={{ color: getFileVisuals(selectedItem.key).color }}>{getFileVisuals(selectedItem.key).icon}</div>
-                            )}
-                            <div style={{ fontWeight: 500, marginTop: '16px', textAlign: 'center', wordBreak: 'break-all' }}>
-                                {parseFileMeta(selectedItem.key, selectedItem.is_folder).name}
-                            </div>
-                            <div className="marker" style={{ fontSize: '12px', marginTop: '4px', textAlign: 'center' }}>
-                                in {parseFileMeta(selectedItem.key, selectedItem.is_folder).dir}
-                            </div>
+                            {selectedItem.is_folder ? <div style={{ color: getFolderVisuals(selectedItem.key).color }}>{getFolderVisuals(selectedItem.key).icon}</div> : <div style={{ color: getFileVisuals(selectedItem.key).color }}>{getFileVisuals(selectedItem.key).icon}</div>}
+                            <div style={{ fontWeight: 500, marginTop: '16px', textAlign: 'center', wordBreak: 'break-all' }}>{parseFileMeta(selectedItem.key, selectedItem.is_folder).name}</div>
+                            <div className="marker" style={{ fontSize: '12px', marginTop: '4px', textAlign: 'center' }}>in {parseFileMeta(selectedItem.key, selectedItem.is_folder).dir}</div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div><span className="marker" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Size</span><div style={{ fontSize: '14px' }}>{selectedItem.is_folder ? '-' : formatSize(selectedItem.size)}</div></div>
@@ -385,24 +405,17 @@ export default function Storage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '32px' }}>
                             {!selectedItem.is_folder && (
                                 <>
-                                    <button 
-                                        className="action-btn" 
-                                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} 
-                                        onClick={() => setViewingFile({ 
-                                            key: selectedItem.key, 
-                                            name: parseFileMeta(selectedItem.key, false).name 
-                                        })}
-                                    >
-                                        <Eye size={16} /> Preview File
+                                    <button className="action-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => setViewingFile({ key: selectedItem.key, name: parseFileMeta(selectedItem.key, false).name, lastModified: selectedItem.last_modified })}>
+                                        <Eye size={16} /> Open File
                                     </button>
-                                    <button className="outline-btn" style={{ width: '100%' }} onClick={() => handleDownload(selectedItem.key)} disabled={downloading === selectedItem.key}>
+                                    <button className="outline-btn" style={{ width: '100%' }} onClick={() => handleDownload(selectedItem.key)} disabled={downloading === selectedItem.key || isOffline}>
                                         {downloading === selectedItem.key ? 'Downloading...' : 'Download to PC'}
                                     </button>
                                 </>
                             )}
                             <div style={{ display: 'flex', gap: '12px' }}>
-                                {!selectedItem.is_folder && <button className="outline-btn" style={{ flex: 1 }} onClick={() => handleShare(selectedItem.key)}>Share Link</button>}
-                                <button className="outline-btn" style={{ flex: 1, color: 'var(--ubv-danger)', borderColor: 'var(--ubv-danger)' }} onClick={() => handleDelete(selectedItem.key)}>Delete</button>
+                                {!selectedItem.is_folder && <button className="outline-btn" style={{ flex: 1 }} onClick={() => handleShare(selectedItem.key)} disabled={isOffline}>Share Link</button>}
+                                <button className="outline-btn" style={{ flex: 1, color: 'var(--ubv-danger)', borderColor: 'var(--ubv-danger)' }} onClick={() => handleDelete(selectedItem.key)} disabled={isOffline}>Delete</button>
                             </div>
                         </div>
                     </div>
@@ -423,10 +436,7 @@ export default function Storage() {
                 <div className="modal-overlay open" onClick={() => { setShareUrl(null); setSharingFile(null); setShareError(null); }}>
                     <div className="modal-content glass-panel" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h2 className="modal-title">Share Link</h2><button className="modal-close" onClick={() => { setShareUrl(null); setSharingFile(null); setShareError(null); }}><X size={20} /></button></div>
-                        
-                        {shareError ? (
-                            <div style={{ color: 'var(--ubv-danger)', marginBottom: '16px', fontSize: '14px' }}>{shareError}</div>
-                        ) : (
+                        {shareError ? <div style={{ color: 'var(--ubv-danger)', marginBottom: '16px', fontSize: '14px' }}>{shareError}</div> : (
                             <>
                                 <p className="marker" style={{ marginBottom: '16px' }}>Anyone with this link can download <strong>{sharingFile.split('/').pop()}</strong> for the next 1 hour.</p>
                                 <div className="form-group"><input type="text" className="form-input" value={shareUrl || ''} readOnly /></div>
@@ -441,7 +451,10 @@ export default function Storage() {
                 <FileViewerModal 
                     fileKey={viewingFile.key} 
                     fileName={viewingFile.name} 
+                    lastModified={viewingFile.lastModified}
                     onClose={() => setViewingFile(null)} 
+                    localRoot={syncConfig?.local_path || null}
+                    userPath={user.path}
                 />
             )}
         </div>

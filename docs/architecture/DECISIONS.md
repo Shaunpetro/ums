@@ -182,3 +182,187 @@ Each entry records a locked decision. Locked decisions require Pre-Change Discus
 
 **Locked:** yes
 **Date:** 2026-11-05
+
+# Architecture Decision Log
+
+Path: docs/architecture/DECISIONS.md
+Last updated: 2026-11-05
+
+Each entry records a locked decision. Locked decisions require Pre-Change Discussion (rule 15) and Shaunpetro sign-off to alter. Entries are append-only; superseded decisions are marked SUPERSEDED with a reference to the newer decision.
+
+---
+
+## DEC-001: Primary storage = Gozunga
+*(Content preserved - see git history for full text)*
+
+## DEC-002: Authentication = Autentico
+*(Content preserved - see git history for full text)*
+
+## DEC-003: Email provider = Resend
+*(Content preserved - see git history for full text)*
+
+## DEC-004: Desktop notifications = Tauri plugin
+*(Content preserved - see git history for full text)*
+
+## DEC-005: File sync = rclone bisync
+*(Content preserved - see git history for full text)*
+
+## DEC-006: Collaborative editor = Diwan
+*(Content preserved - see git history for full text)*
+
+## DEC-007: Offline co-editing = Phase 4
+*(Content preserved - see git history for full text)*
+
+## DEC-008: Revocation = short-lived tokens + revocation list
+*(Content preserved - see git history for full text)*
+
+## DEC-009: Selective sync = exclude filters + pre-signed fetch
+*(Content preserved - see git history for full text)*
+
+## DEC-010: Device security = encrypted cache + device registry + soft wipe
+*(Content preserved - see git history for full text)*
+
+## DEC-011: Code signing = unsigned Phase 1, MSIX Store later
+*(Content preserved - see git history for full text)*
+
+## DEC-012: POPIA = retention.json + audit logs sufficient Phase 1
+*(Content preserved - see git history for full text)*
+
+## DEC-013: Windows-only Phase 1
+*(Content preserved - see git history for full text)*
+
+## DEC-014: Tenant model = single bucket, prefix-isolated
+*(Content preserved - see git history for full text)*
+
+## DEC-015: Capability tokens carry org, dept, and UI capabilities
+*(Content preserved - see git history for full text)*
+
+## DEC-016: Dashboard = tab-isolated pipelines
+*(Content preserved - see git history for full text)*
+
+## DEC-017: Audit trail = sidecar JSON on every write
+*(Content preserved - see git history for full text)*
+
+## DEC-018: Version restore = super-user only, logged as new version
+*(Content preserved - see git history for full text)*
+
+## DEC-019: Schema evolution = schema_version + migrate-on-read
+*(Content preserved - see git history for full text)*
+
+## DEC-020: Backup = versioning + independent nightly snapshot
+*(Content preserved - see git history for full text)*
+
+## DEC-021: Shortcut repair = in binary, Task Scheduler trigger
+*(Content preserved - see git history for full text)*
+
+## DEC-022: Update = Tauri updater, sign-after-Authenticode
+*(Content preserved - see git history for full text)*
+
+## DEC-023: Git model = main protected, squash merges, stage branches
+*(Content preserved - see git history for full text)*
+
+## DEC-024: Two doc sets
+*(Content preserved - see git history for full text)*
+
+## DEC-025: Handover = 12 fixed sections
+*(Content preserved - see git history for full text)*
+
+## DEC-026: Fail-safe alignment = 4-signature verification
+*(Content preserved - see git history for full text)*
+
+## DEC-027: Assets = source-first SVG
+*(Content preserved - see git history for full text)*
+
+## DEC-028: Placeholder keys in chat, real keys in DEV-GUIDE
+*(Content preserved - see git history for full text)*
+
+## DEC-030: Primary storage = FileLu S5 (100 GB, S3-compatible)
+*(Content preserved - see git history for full text)*
+
+## DEC-031: Routing = React Router DOM
+*(Content preserved - see git history for full text)*
+
+## DEC-032: Icons = Lucide React
+*(Content preserved - see git history for full text)*
+
+## DEC-033: Styling = Vanilla CSS + Custom Properties
+*(Content preserved - see git history for full text)*
+
+## DEC-034: Global Upload Context
+*(Content preserved - see git history for full text)*
+
+## DEC-035: Async Background Uploads
+*(Content preserved - see git history for full text)*
+
+## DEC-036: Native Downloads
+*(Content preserved - see git history for full text)*
+
+## DEC-037: Dynamic File Icons
+*(Content preserved - see git history for full text)*
+
+## DEC-038: Installer format = NSIS
+*(Content preserved - see git history for full text)*
+
+## DEC-039: Updater = Tauri plugin, GitHub Releases endpoint
+*(Content preserved - see git history for full text)*
+
+## DEC-040: Release pipeline = GitHub Actions
+*(Content preserved - see git history for full text)*
+
+## DEC-041: Runtime secret delivery = OS keyring
+*(Content preserved - see git history for full text)*
+
+## DEC-042: Version heartbeat deferred to Autentico
+*(Content preserved - see git history for full text)*
+
+## DEC-043: Multi-user sync config lifecycle
+*(Content preserved - see git history for full text)*
+
+## DEC-044: Hybrid "Ping IT" Support System
+*(Content preserved - see git history for full text)*
+
+## DEC-045: System Tray & Background Sync
+*(Content preserved - see git history for full text)*
+
+## DEC-046: Windows Installer Identity
+*(Content preserved - see git history for full text)*
+
+## DEC-047: FileLu API Polling Limits
+*(Content preserved - see git history for full text)*
+
+## DEC-048: Local On-Premise Auth & Staged Revocation
+*(Content preserved - see git history for full text)*
+
+---
+
+## DEC-049: File Viewer & Metadata Cache
+
+**Decision:** File previews and native file openings (Word, Excel, etc.) prioritize a local metadata cache (`%APPDATA%/com.petro-malamule.ums-app/file_cache/`) over Cloud API calls. Cache validity is strictly determined by matching the `last_modified` timestamp from S3, with a 500 MB LRU eviction limit.
+**Reason:** To eliminate unnecessary FileLu API calls when users view files that have already been downloaded. Strict timestamp matching ensures users always see the latest version without relying on arbitrary TTLs.
+
+**Locked:** yes
+**Date:** 2026-11-05
+
+---
+
+## DEC-050: FileLu API Rate Limit Mitigation
+
+**Decision:** 
+1. Storage usage polling is set to 1 hour.
+2. IT Alert polling is set to 1 hour.
+3. If the Cloud `list_files` fails due to API limits, the UI falls back to reading the local sync directory (`list_local_files`).
+4. Error messages are mapped from raw AWS XML to human-readable strings (e.g., "Daily API limit exceeded").
+**Reason:** FileLu's free tier limits requests to 1000/day. 1-hour polling leaves ample headroom for actual file operations, while the local fallback ensures the app remains usable even when the API quota is exhausted.
+
+**Locked:** yes
+**Date:** 2026-11-05
+
+---
+
+## DEC-051: Local-First Native Opening
+
+**Decision:** The `open_file_natively` Rust command checks the local sync folder, then the metadata cache, and only hits the S3 API as a last resort.
+**Reason:** Opening a file in Microsoft Word should not consume API quota or fail if the user is offline. This ensures local files open instantly.
+
+**Locked:** yes
+**Date:** 2026-11-05

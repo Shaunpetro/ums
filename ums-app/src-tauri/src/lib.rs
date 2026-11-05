@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend with background sync, tray menu, keyring credentials, IT alert polling, and file previews.
+// Purpose: Tauri backend with background sync, tray menu, keyring credentials, IT alerts, file previews, and local caching.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -12,7 +12,9 @@ use chrono::Local;
 use keyring::Entry;
 use notify::{RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -34,15 +36,11 @@ fn keyring_entry(name: &str) -> Result<Entry, String> {
 }
 
 fn get_credential(name: &str) -> Result<String, String> {
-    keyring_entry(name)?
-        .get_password()
-        .map_err(|e| format!("Keyring get '{}' failed: {}", name, e))
+    keyring_entry(name)?.get_password().map_err(|e| format!("Keyring get '{}' failed: {}", name, e))
 }
 
 fn set_credential(name: &str, value: &str) -> Result<(), String> {
-    keyring_entry(name)?
-        .set_password(value)
-        .map_err(|e| format!("Keyring set '{}' failed: {}", name, e))
+    keyring_entry(name)?.set_password(value).map_err(|e| format!("Keyring set '{}' failed: {}", name, e))
 }
 
 fn delete_credential(name: &str) {
@@ -53,16 +51,22 @@ fn delete_credential(name: &str) {
 
 fn get_credential_or_env(keyring_name: &str, env_name: &str) -> Result<String, String> {
     if let Ok(v) = get_credential(keyring_name) {
-        if !v.is_empty() {
-            return Ok(v);
-        }
+        if !v.is_empty() { return Ok(v); }
     }
-    std::env::var(env_name).map_err(|_| {
-        format!(
-            "Missing credential '{}' (not in keyring, not in env '{}')",
-            keyring_name, env_name
-        )
-    })
+    std::env::var(env_name).map_err(|_| format!("Missing credential '{}'", keyring_name))
+}
+
+fn format_s3_error<E: std::fmt::Debug>(e: E) -> String {
+    let err_str = format!("{:?}", e);
+    if err_str.contains("Free plan daily request limit exceeded") {
+        "Daily API limit exceeded. Please wait 24 hours.".to_string()
+    } else if err_str.contains("AccessDenied") {
+        "Access denied. Please check your FileLu credentials.".to_string()
+    } else if err_str.contains("dispatch failure") || err_str.contains("connect") {
+        "Network error. Please check your internet connection.".to_string()
+    } else {
+        "Unexpected cloud error. Please check logs.".to_string()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,10 +115,8 @@ async fn get_s3_client() -> Result<(Client, String), String> {
 
     let access_key = get_credential_or_env(KEYRING_ACCESS, "FILELU_ACCESS_KEY")?;
     let secret_key = get_credential_or_env(KEYRING_SECRET, "FILELU_SECRET_KEY")?;
-    let endpoint = get_credential_or_env(KEYRING_ENDPOINT, "FILELU_ENDPOINT")
-        .unwrap_or_else(|_| "https://eu.s5lu.com".to_string());
-    let bucket = get_credential_or_env(KEYRING_BUCKET, "FILELU_BUCKET")
-        .unwrap_or_else(|_| "ums-prod".to_string());
+    let endpoint = get_credential_or_env(KEYRING_ENDPOINT, "FILELU_ENDPOINT").unwrap_or_else(|_| "https://eu.s5lu.com".to_string());
+    let bucket = get_credential_or_env(KEYRING_BUCKET, "FILELU_BUCKET").unwrap_or_else(|_| "ums-prod".to_string());
 
     let creds = Credentials::new(access_key, secret_key, None, None, "filelu");
     let config = aws_sdk_s3::Config::builder()
@@ -133,15 +135,9 @@ async fn get_s3_client() -> Result<(Client, String), String> {
 // --- FILELU CREDENTIALS ---
 
 #[tauri::command]
-async fn set_filelu_credentials(
-    access_key: String,
-    secret_key: String,
-    endpoint: String,
-    bucket: String,
-) -> Result<(), String> {
+async fn set_filelu_credentials(access_key: String, secret_key: String, endpoint: String, bucket: String) -> Result<(), String> {
     let current_access = get_credential(KEYRING_ACCESS).unwrap_or_default();
     let current_secret = get_credential(KEYRING_SECRET).unwrap_or_default();
-
     let new_access = if access_key.trim().is_empty() { current_access } else { access_key.trim().to_string() };
     let new_secret = if secret_key.trim().is_empty() { current_secret } else { secret_key.trim().to_string() };
 
@@ -151,14 +147,8 @@ async fn set_filelu_credentials(
 
     set_credential(KEYRING_ACCESS, &new_access)?;
     set_credential(KEYRING_SECRET, &new_secret)?;
-    
-    if !endpoint.trim().is_empty() {
-        set_credential(KEYRING_ENDPOINT, endpoint.trim())?;
-    }
-    if !bucket.trim().is_empty() {
-        set_credential(KEYRING_BUCKET, bucket.trim())?;
-    }
-
+    if !endpoint.trim().is_empty() { set_credential(KEYRING_ENDPOINT, endpoint.trim())?; }
+    if !bucket.trim().is_empty() { set_credential(KEYRING_BUCKET, bucket.trim())?; }
     log("FileLu credentials updated in keyring");
     Ok(())
 }
@@ -168,13 +158,9 @@ async fn get_filelu_credentials_status() -> Result<CredentialStatus, String> {
     let has = |name: &str| -> bool { get_credential(name).map(|v| !v.is_empty()).unwrap_or(false) };
     let access_key_set = has(KEYRING_ACCESS);
     let secret_key_set = has(KEYRING_SECRET);
-    let endpoint_set = has(KEYRING_ENDPOINT);
-    let bucket_set = has(KEYRING_BUCKET);
     Ok(CredentialStatus {
-        access_key_set,
-        secret_key_set,
-        endpoint_set,
-        bucket_set,
+        access_key_set, secret_key_set,
+        endpoint_set: has(KEYRING_ENDPOINT), bucket_set: has(KEYRING_BUCKET),
         all_set: access_key_set && secret_key_set,
     })
 }
@@ -185,7 +171,6 @@ async fn clear_filelu_credentials() -> Result<(), String> {
     delete_credential(KEYRING_SECRET);
     delete_credential(KEYRING_ENDPOINT);
     delete_credential(KEYRING_BUCKET);
-    log("FileLu credentials cleared");
     Ok(())
 }
 
@@ -201,18 +186,14 @@ fn get_config_path(app: &tauri::AppHandle) -> PathBuf {
 fn get_all_sync_configs(app: tauri::AppHandle) -> Vec<SyncConfig> {
     let path = get_config_path(&app);
     if let Ok(content) = std::fs::read_to_string(path) {
-        if let Ok(configs) = serde_json::from_str::<Vec<SyncConfig>>(&content) {
-            return configs;
-        }
+        if let Ok(configs) = serde_json::from_str::<Vec<SyncConfig>>(&content) { return configs; }
     }
     vec![]
 }
 
 fn write_all_sync_configs(app: &tauri::AppHandle, configs: &[SyncConfig]) -> Result<(), String> {
     let path = get_config_path(app);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
     let json = serde_json::to_string_pretty(configs).map_err(|e| e.to_string())?;
     std::fs::write(path, json).map_err(|e| e.to_string())?;
     Ok(())
@@ -220,27 +201,15 @@ fn write_all_sync_configs(app: &tauri::AppHandle, configs: &[SyncConfig]) -> Res
 
 fn stop_watcher_for_prefix(state: &State<'_, AppState>, prefix: &str) {
     let mut guard = state.watchers.lock().unwrap();
-    if guard.remove(prefix).is_some() {
-        log(&format!("Stopped watcher for prefix: {}", prefix));
-    }
+    if guard.remove(prefix).is_some() { log(&format!("Stopped watcher for prefix: {}", prefix)); }
 }
 
 #[tauri::command]
-async fn save_sync_config(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    local_path: String,
-    sync_target_prefix: String,
-) -> Result<(), String> {
+async fn save_sync_config(app: tauri::AppHandle, state: State<'_, AppState>, local_path: String, sync_target_prefix: String) -> Result<(), String> {
     let safe_target = sanitize_prefix(&sync_target_prefix);
-
     let mut configs = get_all_sync_configs(app.clone());
     configs.retain(|c| c.sync_target_prefix != safe_target);
-    configs.push(SyncConfig {
-        local_path: local_path.clone(),
-        sync_target_prefix: safe_target.clone(),
-        enabled: true,
-    });
+    configs.push(SyncConfig { local_path: local_path.clone(), sync_target_prefix: safe_target.clone(), enabled: true });
     write_all_sync_configs(&app, &configs)?;
 
     stop_watcher_for_prefix(&state, &safe_target);
@@ -251,26 +220,17 @@ async fn save_sync_config(
     tauri::async_runtime::spawn(async move {
         let _ = perform_initial_sync(app_clone, local_path, target_clone).await;
     });
-
     Ok(())
 }
 
 // --- WATCHER LIFECYCLE ---
 
 #[tauri::command]
-async fn start_sync_for_user(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    user_path: String,
-) -> Result<bool, String> {
+async fn start_sync_for_user(app: tauri::AppHandle, state: State<'_, AppState>, user_path: String) -> Result<bool, String> {
     let safe_target = sanitize_prefix(&user_path);
     let configs = get_all_sync_configs(app.clone());
-    let config = match configs
-        .into_iter()
-        .find(|c| c.sync_target_prefix == safe_target && c.enabled)
-    {
-        Some(c) => c,
-        None => return Ok(false),
+    let config = match configs.into_iter().find(|c| c.sync_target_prefix == safe_target && c.enabled) {
+        Some(c) => c, None => return Ok(false),
     };
 
     if !Path::new(&config.local_path).exists() {
@@ -278,34 +238,19 @@ async fn start_sync_for_user(
         return Ok(false);
     }
 
-    {
-        let guard = state.watchers.lock().unwrap();
-        if guard.contains_key(&safe_target) {
-            return Ok(true);
-        }
-    }
+    { let guard = state.watchers.lock().unwrap(); if guard.contains_key(&safe_target) { return Ok(true); } }
 
-    start_watcher(
-        app.clone(),
-        state,
-        config.local_path.clone(),
-        safe_target.clone(),
-    )?;
-
+    start_watcher(app.clone(), state, config.local_path.clone(), safe_target.clone())?;
     let app_clone = app.clone();
     let local_path = config.local_path.clone();
     tauri::async_runtime::spawn(async move {
         let _ = perform_initial_sync(app_clone, local_path, safe_target).await;
     });
-
     Ok(true)
 }
 
 #[tauri::command]
-async fn stop_sync_for_user(
-    state: State<'_, AppState>,
-    user_path: String,
-) -> Result<(), String> {
+async fn stop_sync_for_user(state: State<'_, AppState>, user_path: String) -> Result<(), String> {
     let safe_target = sanitize_prefix(&user_path);
     stop_watcher_for_prefix(&state, &safe_target);
     Ok(())
@@ -315,42 +260,24 @@ async fn stop_sync_for_user(
 
 #[tauri::command]
 fn open_local_folder(path: String) -> Result<(), String> {
-    tauri_plugin_opener::open_path(&path, None::<&str>)
-        .map_err(|e| format!("Failed to open folder: {}", e))
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| format!("Failed to open folder: {}", e))
 }
 
 // --- WATCHER ---
 
-fn start_watcher(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    path_str: String,
-    target_prefix: String,
-) -> Result<(), String> {
+fn start_watcher(app: tauri::AppHandle, state: State<'_, AppState>, path_str: String, target_prefix: String) -> Result<(), String> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
-            if matches!(
-                event.kind,
-                notify::EventKind::Create(_) | notify::EventKind::Modify(_)
-            ) {
-                for path in event.paths {
-                    let _ = tx.send(path);
-                }
+            if matches!(event.kind, notify::EventKind::Create(_) | notify::EventKind::Modify(_)) {
+                for path in event.paths { let _ = tx.send(path); }
             }
         }
-    })
-    .map_err(|e| e.to_string())?;
+    }).map_err(|e| e.to_string())?;
 
-    watcher
-        .watch(Path::new(&path_str), RecursiveMode::Recursive)
-        .map_err(|e| format!("Failed to watch folder: {}", e))?;
-
-    {
-        let mut guard = state.watchers.lock().unwrap();
-        guard.insert(target_prefix.clone(), watcher);
-    }
+    watcher.watch(Path::new(&path_str), RecursiveMode::Recursive).map_err(|e| format!("Failed to watch folder: {}", e))?;
+    { let mut guard = state.watchers.lock().unwrap(); guard.insert(target_prefix.clone(), watcher); }
 
     let app_handle = app.clone();
     let base_path = PathBuf::from(&path_str);
@@ -359,11 +286,8 @@ fn start_watcher(
     tauri::async_runtime::spawn(async move {
         while let Some(path) = rx.recv().await {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" {
-                    continue;
-                }
+                if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" { continue; }
             }
-
             let app_task = app_handle.clone();
             let base_task = base_path.clone();
             let target_task = target_prefix_clone.clone();
@@ -379,40 +303,18 @@ fn start_watcher(
     Ok(())
 }
 
-async fn handle_watcher_event(
-    app_handle: tauri::AppHandle,
-    base_path: PathBuf,
-    target_prefix: String,
-    path: PathBuf,
-) {
-    let rel_path = match path.strip_prefix(&base_path) {
-        Ok(p) => p.to_path_buf(),
-        Err(_) => return,
-    };
+async fn handle_watcher_event(app_handle: tauri::AppHandle, base_path: PathBuf, target_prefix: String, path: PathBuf) {
+    let rel_path = match path.strip_prefix(&base_path) { Ok(p) => p.to_path_buf(), Err(_) => return };
     let rel_str = rel_path.to_string_lossy().replace("\\", "/");
     let full_s3_key = format!("{}{}", target_prefix, rel_str);
 
     if path.is_dir() {
         let key = format!("{}/", full_s3_key);
         if let Ok((client, bucket)) = get_s3_client().await {
-            let _ = client
-                .put_object()
-                .bucket(bucket)
-                .key(&key)
-                .body(ByteStream::from_static(b""))
-                .send()
-                .await;
+            let _ = client.put_object().bucket(bucket).key(&key).body(ByteStream::from_static(b"")).send().await;
         }
     } else if path.is_file() {
-        let _ = app_handle.emit(
-            "sync-status",
-            serde_json::json!({
-                "file": rel_str,
-                "status": "waiting",
-                "message": "Waiting 60s for OS to release file lock..."
-            }),
-        );
-
+        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "waiting", "message": "Waiting 60s for OS to release file lock..." }));
         tokio::time::sleep(Duration::from_secs(60)).await;
 
         let mut retries = 5;
@@ -422,64 +324,27 @@ async fn handle_watcher_event(
             match ByteStream::from_path(&path).await {
                 Ok(body) => {
                     if let Ok((client, bucket)) = get_s3_client().await {
-                        let _ = app_handle.emit(
-                            "sync-status",
-                            serde_json::json!({ "file": rel_str, "status": "uploading" }),
-                        );
-
-                        match client
-                            .put_object()
-                            .bucket(bucket)
-                            .key(&full_s3_key)
-                            .body(body)
-                            .content_type("application/octet-stream")
-                            .send()
-                            .await
-                        {
+                        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "uploading" }));
+                        match client.put_object().bucket(bucket).key(&full_s3_key).body(body).content_type("application/octet-stream").send().await {
                             Ok(_) => {
                                 log(&format!("Local Sync complete: {}", full_s3_key));
-                                let _ = app_handle.emit(
-                                    "sync-status",
-                                    serde_json::json!({ "file": rel_str, "status": "success" }),
-                                );
+                                let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "success" }));
                                 success = true;
                             }
                             Err(e) => {
                                 log(&format!("Upload failed: {:?}", e));
-                                let _ = app_handle.emit(
-                                    "sync-status",
-                                    serde_json::json!({
-                                        "file": rel_str,
-                                        "status": "error",
-                                        "message": format!("Upload failed: {}", e)
-                                    }),
-                                );
+                                let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "error", "message": format!("Upload failed: {}", e) }));
                             }
                         }
                     }
                 }
                 Err(_e) => {
-                    let _ = app_handle.emit(
-                        "sync-status",
-                        serde_json::json!({
-                            "file": rel_str,
-                            "status": "locked",
-                            "message": format!("File locked. Retrying in 2 mins. ({} attempts left)", retries)
-                        }),
-                    );
-
+                    let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "locked", "message": format!("File locked. Retrying in 2 mins. ({} attempts left)", retries) }));
                     retries -= 1;
                     if retries > 0 {
                         tokio::time::sleep(Duration::from_secs(120)).await;
                     } else {
-                        let _ = app_handle.emit(
-                            "sync-status",
-                            serde_json::json!({
-                                "file": rel_str,
-                                "status": "error",
-                                "message": "Failed after 5 attempts. File permanently locked."
-                            }),
-                        );
+                        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "error", "message": "Failed after 5 attempts. File permanently locked." }));
                     }
                 }
             }
@@ -487,81 +352,39 @@ async fn handle_watcher_event(
     }
 }
 
-async fn upload_local_file(
-    app: tauri::AppHandle,
-    local_file_path: String,
-    s3_key: String,
-) -> Result<(), String> {
+async fn upload_local_file(app: tauri::AppHandle, local_file_path: String, s3_key: String) -> Result<(), String> {
     let result = async {
         let (client, bucket) = get_s3_client().await?;
-        let body = ByteStream::from_path(&local_file_path)
-            .await
-            .map_err(|e| format!("Open error: {}", e))?;
-
-        client
-            .put_object()
-            .bucket(bucket)
-            .key(&s3_key)
-            .body(body)
-            .content_type("application/octet-stream")
-            .send()
-            .await
-            .map_err(|e| format!("Upload failed: {:?}", e))?;
-
+        let body = ByteStream::from_path(&local_file_path).await.map_err(|e| format!("Open error: {}", e))?;
+        client.put_object().bucket(bucket).key(&s3_key).body(body).content_type("application/octet-stream").send().await.map_err(format_s3_error)?;
         Ok::<(), String>(())
-    }
-    .await;
+    }.await;
 
     match result {
-        Ok(_) => {
-            log(&format!("Upload complete: {}", s3_key));
-            let _ = app.emit("upload-success", s3_key);
-            Ok(())
-        }
-        Err(e) => {
-            log(&format!("Upload error: {}", e));
-            let _ = app.emit("upload-error", e.clone());
-            Err(e)
-        }
+        Ok(_) => { log(&format!("Upload complete: {}", s3_key)); let _ = app.emit("upload-success", s3_key); Ok(()) }
+        Err(e) => { log(&format!("Upload error: {}", e)); let _ = app.emit("upload-error", e.clone()); Err(e) }
     }
 }
 
-async fn perform_initial_sync(
-    app: tauri::AppHandle,
-    local_path: String,
-    target_prefix: String,
-) -> Result<(), String> {
+async fn perform_initial_sync(app: tauri::AppHandle, local_path: String, target_prefix: String) -> Result<(), String> {
     log(&format!("Starting initial directory sync for {}", target_prefix));
     let base_path = PathBuf::from(&local_path);
 
     for entry in WalkDir::new(&base_path).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" {
-                continue;
-            }
+            if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" { continue; }
         }
-
         if let Ok(rel_path) = path.strip_prefix(&base_path) {
             let rel_str = rel_path.to_string_lossy().replace("\\", "/");
             let full_s3_key = format!("{}{}", target_prefix, rel_str);
-
             if path.is_dir() {
                 let key = format!("{}/", full_s3_key);
                 if let Ok((client, bucket)) = get_s3_client().await {
-                    let _ = client
-                        .put_object()
-                        .bucket(bucket)
-                        .key(&key)
-                        .body(ByteStream::from_static(b""))
-                        .send()
-                        .await;
+                    let _ = client.put_object().bucket(bucket).key(&key).body(ByteStream::from_static(b"")).send().await;
                 }
             } else if path.is_file() {
-                let _ =
-                    upload_local_file(app.clone(), path.to_string_lossy().to_string(), full_s3_key)
-                        .await;
+                let _ = upload_local_file(app.clone(), path.to_string_lossy().to_string(), full_s3_key).await;
             }
         }
     }
@@ -569,66 +392,234 @@ async fn perform_initial_sync(
     Ok(())
 }
 
-// --- FILE PREVIEW ---
+// --- FILE PREVIEW & CACHE ---
 
 #[tauri::command]
-async fn get_file_preview_data(key: String) -> Result<String, String> {
+async fn read_local_file_as_base64(local_root: String, s3_key: String, user_path: String) -> Result<String, String> {
+    let safe_user_path = sanitize_prefix(&user_path);
+    let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
+    let full_path = PathBuf::from(&local_root).join(relative_path);
+    
+    if !full_path.exists() {
+        return Err("File not found locally".to_string());
+    }
+
+    let bytes = tokio::fs::read(&full_path).await.map_err(|e| format!("Failed to read local file: {}", e))?;
+    Ok(general_purpose::STANDARD.encode(&bytes))
+}
+
+fn cache_dir(app: &tauri::AppHandle) -> PathBuf {
+    let mut path = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+    path.push("file_cache");
+    let _ = std::fs::create_dir_all(&path);
+    path
+}
+
+fn cache_key(s3_key: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    s3_key.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+#[derive(Serialize, Deserialize)]
+struct CacheMeta {
+    s3_key: String,
+    last_modified: String,
+    cached_at: i64,
+    size: u64,
+}
+
+// Shared helper to ensure cache logic is consistent
+fn get_cache_paths(app: &tauri::AppHandle, s3_key: &str) -> (PathBuf, PathBuf) {
+    let dir = cache_dir(app);
+    let key_hash = cache_key(s3_key);
+    let ext = Path::new(s3_key).extension().and_then(|e| e.to_str()).unwrap_or("bin");
+    let cache_file = dir.join(format!("{}.{}", key_hash, ext));
+    let meta_file = dir.join(format!("{}.meta.json", key_hash));
+    (cache_file, meta_file)
+}
+
+#[tauri::command]
+async fn cache_file_from_cloud(app: tauri::AppHandle, s3_key: String, last_modified: String, force_refresh: bool) -> Result<String, String> {
+    let (cache_file, meta_file) = get_cache_paths(&app, &s3_key);
+    let now = Local::now().timestamp();
+
+    if !force_refresh && cache_file.exists() && meta_file.exists() {
+        if let Ok(meta_str) = std::fs::read_to_string(&meta_file) {
+            if let Ok(meta) = serde_json::from_str::<CacheMeta>(&meta_str) {
+                if meta.last_modified == last_modified {
+                    let bytes = std::fs::read(&cache_file).map_err(|e| e.to_string())?;
+                    log(&format!("Cache HIT for {} (v: {})", s3_key, last_modified));
+                    return Ok(general_purpose::STANDARD.encode(&bytes));
+                } else {
+                    log(&format!("Cache STALE for {} (cached: {}, cloud: {})", s3_key, meta.last_modified, last_modified));
+                }
+            }
+        }
+    }
+
+    log(&format!("Cache MISS for {}. Downloading from cloud...", s3_key));
     let (client, bucket) = get_s3_client().await?;
-    let resp = client
-        .get_object()
-        .bucket(bucket)
-        .key(&key)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch file: {:?}", e))?;
+    let resp = client.get_object().bucket(bucket).key(&s3_key).send().await.map_err(format_s3_error)?;
+    let bytes = resp.body.collect().await.map_err(|e| format!("Read error: {}", e))?.into_bytes();
+    let size = bytes.len() as u64;
+
+    let _ = std::fs::write(&cache_file, &bytes);
+    let meta = CacheMeta { s3_key: s3_key.clone(), last_modified: last_modified.clone(), cached_at: now, size };
+    if let Ok(json) = serde_json::to_string(&meta) {
+        let _ = std::fs::write(&meta_file, json);
+    }
+
+    let _ = evict_cache_if_needed(&cache_dir(&app), 500 * 1024 * 1024);
+    Ok(general_purpose::STANDARD.encode(&bytes))
+}
+
+#[tauri::command]
+async fn open_file_natively(
+    app: tauri::AppHandle,
+    s3_key: String,
+    local_root: Option<String>,
+    user_path: String,
+    last_modified: String,
+) -> Result<(), String> {
+    // 1. Try Local Disk
+    if let Some(root) = local_root {
+        let safe_user_path = sanitize_prefix(&user_path);
+        let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
+        let full_path = PathBuf::from(&root).join(relative_path);
         
+        if full_path.exists() {
+            log(&format!("Opening locally: {:?}", full_path));
+            return tauri_plugin_opener::open_path(full_path, None::<&str>).map_err(|e| e.to_string());
+        }
+    }
+
+    // 2. Try Cache
+    let (cache_file, meta_file) = get_cache_paths(&app, &s3_key);
+    let now = Local::now().timestamp();
+    
+    if cache_file.exists() && meta_file.exists() {
+        if let Ok(meta_str) = std::fs::read_to_string(&meta_file) {
+            if let Ok(meta) = serde_json::from_str::<CacheMeta>(&meta_str) {
+                if meta.last_modified == last_modified {
+                    log(&format!("Opening from CACHE: {:?}", cache_file));
+                    return tauri_plugin_opener::open_path(cache_file, None::<&str>).map_err(|e| e.to_string());
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to Cloud
+    log(&format!("Downloading for native open: {}", s3_key));
+    let (client, bucket) = get_s3_client().await?;
+    let resp = client.get_object().bucket(bucket).key(&s3_key).send().await.map_err(format_s3_error)?;
     let bytes = resp.body.collect().await.map_err(|e| e.to_string())?.into_bytes();
-    let b64 = general_purpose::STANDARD.encode(&bytes);
-    Ok(b64)
+    let size = bytes.len() as u64;
+
+    let _ = std::fs::write(&cache_file, &bytes);
+    let meta = CacheMeta { s3_key: s3_key.clone(), last_modified, cached_at: now, size };
+    if let Ok(json) = serde_json::to_string(&meta) {
+        let _ = std::fs::write(&meta_file, json);
+    }
+    let _ = evict_cache_if_needed(&cache_dir(&app), 500 * 1024 * 1024);
+
+    tauri_plugin_opener::open_path(cache_file, None::<&str>).map_err(|e| e.to_string())
+}
+
+fn evict_cache_if_needed(dir: &PathBuf, max_bytes: u64) -> std::io::Result<()> {
+    let mut entries: Vec<(PathBuf, u64, i64)> = Vec::new();
+    let mut total: u64 = 0;
+
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") { continue; } // Skip meta files
+            
+            if let Ok(meta) = entry.metadata() {
+                let cached_at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+                total += meta.len();
+                entries.push((path, meta.len(), cached_at));
+            }
+        }
+    }
+
+    if total <= max_bytes { return Ok(()); }
+
+    entries.sort_by_key(|(_, _, t)| *t);
+    for (path, size, _) in entries {
+        if total <= max_bytes { break; }
+        let _ = std::fs::remove_file(&path);
+        let meta_path = path.with_extension("meta.json"); // This is a bit naive, but works for now
+        let _ = std::fs::remove_file(&meta_path);
+        total = total.saturating_sub(size);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_file_cache(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = cache_dir(&app);
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for entry in rd.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Ok(())
+}
+
+// --- LOCAL LISTING ---
+
+#[tauri::command]
+fn list_local_files(local_root: String, current_prefix: String, user_path: String) -> Result<Vec<S3Object>, String> {
+    let base = PathBuf::from(&local_root);
+    let user_base = sanitize_prefix(&user_path);
+    
+    let rel_prefix = current_prefix.strip_prefix(&user_base).unwrap_or("").trim_start_matches('/');
+    let search_dir = base.join(rel_prefix);
+    
+    if !search_dir.exists() { return Ok(vec![]); }
+
+    let mut objects = Vec::new();
+    let entries = std::fs::read_dir(&search_dir).map_err(|e| format!("Local read error: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        if name.starts_with('~') || name == ".DS_Store" { continue; }
+
+        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        let is_folder = metadata.is_dir();
+        let key = format!("{}{}{}", current_prefix, name, if is_folder { "/" } else { "" });
+        
+        let last_modified = metadata.modified().ok().map(|t| {
+            let dt: chrono::DateTime<chrono::Utc> = t.into();
+            dt.to_rfc3339()
+        });
+
+        objects.push(S3Object {
+            key, size: if is_folder { 0 } else { metadata.len() }, is_folder, last_modified,
+        });
+    }
+    Ok(objects)
 }
 
 // --- IT SUPPORT (PING IT) ---
 
 #[tauri::command]
-async fn send_it_alert(
-    user_name: String,
-    user_org: String,
-    user_dept: String,
-    issue: String,
-) -> Result<(), String> {
+async fn send_it_alert(user_name: String, user_org: String, user_dept: String, issue: String) -> Result<(), String> {
     let (client, bucket) = get_s3_client().await?;
     let now = Local::now();
     let file_timestamp = now.format("%Y-%m-%d_%H-%M-%S").to_string();
     let human_timestamp = now.format("%Y-%m-%d %H:%M:%S").to_string();
-    
-    let key = format!(
-        "{}/it_alerts/{}_{}.json",
-        user_org,
-        file_timestamp,
-        user_name.replace(" ", "_")
-    );
+    let key = format!("{}/it_alerts/{}_{}.json", user_org, file_timestamp, user_name.replace(" ", "_"));
 
     let payload = serde_json::json!({
-        "user_name": user_name,
-        "user_org": user_org,
-        "user_dept": user_dept,
-        "issue": issue,
-        "timestamp": human_timestamp,
-        "status": "open"
+        "user_name": user_name, "user_org": user_org, "user_dept": user_dept, "issue": issue, "timestamp": human_timestamp, "status": "open"
     });
 
     let body = ByteStream::from(serde_json::to_vec(&payload).map_err(|e| e.to_string())?);
-
-    client
-        .put_object()
-        .bucket(bucket)
-        .key(&key)
-        .body(body)
-        .content_type("application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to send alert: {:?}", e))?;
-
+    client.put_object().bucket(bucket).key(&key).body(body).content_type("application/json").send().await.map_err(format_s3_error)?;
     log(&format!("IT Alert saved to S3: {}", key));
     Ok(())
 }
@@ -639,31 +630,16 @@ async fn poll_it_alerts(app: tauri::AppHandle) {
 
     loop {
         if let Ok((client, bucket)) = get_s3_client().await {
-            if let Ok(resp) = client
-                .list_objects_v2()
-                .bucket(&bucket)
-                .prefix("VSC Mining/it_alerts/")
-                .send()
-                .await
-            {
+            if let Ok(resp) = client.list_objects_v2().bucket(&bucket).prefix("VSC Mining/it_alerts/").send().await {
                 if let Some(contents) = resp.contents {
                     if last_seen_key.is_empty() {
-                        if let Some(newest) = contents.last() {
-                            if let Some(k) = &newest.key {
-                                last_seen_key = k.clone();
-                            }
-                        }
+                        if let Some(newest) = contents.last() { if let Some(k) = &newest.key { last_seen_key = k.clone(); } }
                     } else {
                         for obj in contents {
                             if let Some(key) = &obj.key {
                                 if key > &last_seen_key && key.ends_with(".json") {
                                     let msg = format!("New IT Alert from {}", key.split('_').last().unwrap_or("User").replace(".json", ""));
-                                    let _ = app.notification()
-                                        .builder()
-                                        .title("Ubuveil IT Support")
-                                        .body(&msg)
-                                        .show();
-                                    
+                                    let _ = app.notification().builder().title("Ubuveil IT Support").body(&msg).show();
                                     last_seen_key = key.clone();
                                 }
                             }
@@ -672,11 +648,11 @@ async fn poll_it_alerts(app: tauri::AppHandle) {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_secs(120)).await;
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
 }
 
-// --- STORAGE USAGE ---
+// --- STORAGE USAGE & LISTING ---
 
 #[tauri::command]
 async fn get_storage_usage() -> Result<u64, String> {
@@ -686,58 +662,30 @@ async fn get_storage_usage() -> Result<u64, String> {
 
     loop {
         let mut req = client.list_objects_v2().bucket(&bucket);
-        if let Some(token) = &continuation_token {
-            req = req.continuation_token(token);
-        }
-
-        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if let Some(token) = &continuation_token { req = req.continuation_token(token); }
+        let resp = req.send().await.map_err(format_s3_error)?;
 
         if let Some(contents) = resp.contents {
-            for obj in contents {
-                total_size += obj.size.unwrap_or(0) as u64;
-            }
+            for obj in contents { total_size += obj.size.unwrap_or(0) as u64; }
         }
-
-        if resp.is_truncated == Some(true) {
-            continuation_token = resp.next_continuation_token;
-        } else {
-            break;
-        }
+        if resp.is_truncated == Some(true) { continuation_token = resp.next_continuation_token; } else { break; }
     }
     Ok(total_size)
 }
-
-// --- STORAGE ---
 
 #[tauri::command]
 async fn list_files(prefix: Option<String>) -> Result<Vec<S3Object>, String> {
     let raw_prefix = prefix.unwrap_or_else(|| "".to_string());
     let search_prefix = sanitize_prefix(&raw_prefix);
     let (client, bucket) = get_s3_client().await?;
-    let resp = client
-        .list_objects_v2()
-        .bucket(bucket)
-        .prefix(&search_prefix)
-        .delimiter("/")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to connect to FileLu: {}", e))?;
+    let resp = client.list_objects_v2().bucket(bucket).prefix(&search_prefix).delimiter("/").send().await.map_err(format_s3_error)?;
+    
     let mut objects = Vec::new();
     if let Some(prefixes) = resp.common_prefixes {
         for p in prefixes {
             if let Some(p_prefix) = p.prefix {
-                let display_name = p_prefix
-                    .strip_prefix(&search_prefix)
-                    .unwrap_or(&p_prefix)
-                    .to_string();
-                if !display_name.is_empty() {
-                    objects.push(S3Object {
-                        key: p_prefix,
-                        size: 0,
-                        is_folder: true,
-                        last_modified: None,
-                    });
-                }
+                let display_name = p_prefix.strip_prefix(&search_prefix).unwrap_or(&p_prefix).to_string();
+                if !display_name.is_empty() { objects.push(S3Object { key: p_prefix, size: 0, is_folder: true, last_modified: None }); }
             }
         }
     }
@@ -746,32 +694,16 @@ async fn list_files(prefix: Option<String>) -> Result<Vec<S3Object>, String> {
             let last_mod = object.last_modified().map(|dt| dt.to_string());
             let size = object.size.unwrap_or(0) as u64;
             if let Some(key) = object.key {
-                if key == search_prefix {
-                    continue;
-                }
+                if key == search_prefix { continue; }
                 let normalized_key = key.trim_end_matches('/');
                 let has_extension = normalized_key.split('/').last().unwrap_or("").contains('.');
                 let is_folder = key.ends_with('/') || (size == 0 && !has_extension);
                 if is_folder {
-                    let exists = objects
-                        .iter()
-                        .any(|o| o.key.trim_end_matches('/') == normalized_key);
-                    if exists {
-                        continue;
-                    }
-                    objects.push(S3Object {
-                        key: format!("{}/", normalized_key),
-                        size: 0,
-                        is_folder: true,
-                        last_modified: last_mod,
-                    });
+                    let exists = objects.iter().any(|o| o.key.trim_end_matches('/') == normalized_key);
+                    if exists { continue; }
+                    objects.push(S3Object { key: format!("{}/", normalized_key), size: 0, is_folder: true, last_modified: last_mod });
                 } else {
-                    objects.push(S3Object {
-                        key,
-                        size,
-                        is_folder: false,
-                        last_modified: last_mod,
-                    });
+                    objects.push(S3Object { key, size, is_folder: false, last_modified: last_mod });
                 }
             }
         }
@@ -784,92 +716,43 @@ async fn create_folder(folder_name: String, current_prefix: String) -> Result<()
     let safe_prefix = sanitize_prefix(&current_prefix);
     let key = format!("{}{}/", safe_prefix, folder_name);
     let (client, bucket) = get_s3_client().await?;
-    client
-        .put_object()
-        .bucket(bucket)
-        .key(&key)
-        .body(ByteStream::from_static(b""))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to create folder: {:?}", e))?;
+    client.put_object().bucket(bucket).key(&key).body(ByteStream::from_static(b"")).send().await.map_err(format_s3_error)?;
     Ok(())
 }
 
 #[tauri::command]
 async fn delete_object(key: String) -> Result<(), String> {
     let (client, bucket) = get_s3_client().await?;
-    client
-        .delete_object()
-        .bucket(bucket)
-        .key(&key)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to delete object: {:?}", e))?;
+    client.delete_object().bucket(bucket).key(&key).send().await.map_err(format_s3_error)?;
     Ok(())
 }
 
 #[tauri::command]
 async fn get_share_url(key: String) -> Result<String, String> {
     let (client, bucket) = get_s3_client().await?;
-    let presigning_config = aws_sdk_s3::presigning::PresigningConfig::builder()
-        .expires_in(Duration::from_secs(3600))
-        .build()
-        .map_err(|e| format!("Failed to build presigning config: {}", e))?;
-    let presigned_req = client
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .presigned(presigning_config)
-        .await
-        .map_err(|e| format!("Failed to generate URL: {:?}", e))?;
+    let presigning_config = aws_sdk_s3::presigning::PresigningConfig::builder().expires_in(Duration::from_secs(3600)).build().map_err(|e| format!("Failed to build presigning config: {}", e))?;
+    let presigned_req = client.get_object().bucket(bucket).key(key).presigned(presigning_config).await.map_err(|e| format!("Failed to generate URL: {:?}", e))?;
     Ok(presigned_req.uri().to_string())
 }
 
 #[tauri::command]
-async fn upload_file(
-    app: tauri::AppHandle,
-    file_path: String,
-    current_prefix: String,
-) -> Result<(), String> {
+async fn upload_file(app: tauri::AppHandle, file_path: String, current_prefix: String) -> Result<(), String> {
     let safe_prefix = sanitize_prefix(&current_prefix);
-    let file_name = Path::new(&file_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or("Invalid file name")?
-        .to_string();
+    let file_name = Path::new(&file_path).file_name().and_then(|n| n.to_str()).ok_or("Invalid file name")?.to_string();
     let key = format!("{}{}", safe_prefix, file_name);
-
-    tauri::async_runtime::spawn(async move {
-        let _ = upload_local_file(app, file_path, key).await;
-    });
+    tauri::async_runtime::spawn(async move { let _ = upload_local_file(app, file_path, key).await; });
     Ok(())
 }
 
 #[tauri::command]
 async fn download_file(app: tauri::AppHandle, key: String) -> Result<String, String> {
     let (client, bucket) = get_s3_client().await?;
-    let resp = client
-        .get_object()
-        .bucket(bucket)
-        .key(&key)
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {:?}", e))?;
-    let bytes = resp
-        .body
-        .collect()
-        .await
-        .map_err(|e| format!("Failed to read body: {}", e))?
-        .into_bytes();
+    let resp = client.get_object().bucket(bucket).key(&key).send().await.map_err(format_s3_error)?;
+    let bytes = resp.body.collect().await.map_err(|e| format!("Failed to read body: {}", e))?.into_bytes();
     let file_name = key.split('/').last().unwrap_or("downloaded_file");
-    let download_dir = app
-        .path()
-        .download_dir()
-        .map_err(|e| format!("Could not find Downloads folder: {}", e))?;
+    let download_dir = app.path().download_dir().map_err(|e| format!("Could not find Downloads folder: {}", e))?;
     let dest_path = download_dir.join(file_name);
-    tokio::fs::write(&dest_path, bytes)
-        .await
-        .map_err(|e| format!("Failed to save file: {}", e))?;
+    tokio::fs::write(&dest_path, bytes).await.map_err(|e| format!("Failed to save file: {}", e))?;
     Ok(dest_path.to_string_lossy().to_string())
 }
 
@@ -881,36 +764,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
-        .manage(AppState {
-            watchers: Mutex::new(HashMap::new()),
-        })
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .manage(AppState { watchers: Mutex::new(HashMap::new()) })
         .invoke_handler(tauri::generate_handler![
-            list_files,
-            create_folder,
-            delete_object,
-            get_share_url,
-            get_file_preview_data,
-            upload_file,
-            download_file,
-            get_all_sync_configs,
-            save_sync_config,
-            get_storage_usage,
-            set_filelu_credentials,
-            get_filelu_credentials_status,
-            clear_filelu_credentials,
-            start_sync_for_user,
-            stop_sync_for_user,
-            send_it_alert,
-            open_local_folder
+            list_files, list_local_files, create_folder, delete_object, get_share_url, read_local_file_as_base64,
+            cache_file_from_cloud, open_file_natively, clear_file_cache, upload_file, download_file, get_all_sync_configs,
+            save_sync_config, get_storage_usage, set_filelu_credentials, get_filelu_credentials_status,
+            clear_filelu_credentials, start_sync_for_user, stop_sync_for_user, send_it_alert, open_local_folder
         ])
         .setup(|app| {
             log("UMS backend ready");
-
-            // System Tray Setup
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Open Ubuveil MS", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
@@ -920,46 +783,23 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
+                    "quit" => app.exit(0),
+                    "show" => { if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); } }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); }
                     }
-                })
-                .build(app)?;
+                }).build(app)?;
 
-            // Start background alert poller
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                poll_it_alerts(handle).await;
-            });
-
+            tauri::async_runtime::spawn(async move { poll_it_alerts(handle).await; });
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
-                api.prevent_close();
-            }
+            if let WindowEvent::CloseRequested { api, .. } = event { window.hide().unwrap(); api.prevent_close(); }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

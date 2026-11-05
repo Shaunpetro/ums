@@ -122,3 +122,35 @@ Path: docs/handover/CURRENT.md
 ## Rules for this file
 - Updated continuously, not at stage boundaries.
 - Reflects working tree state, not last commit.
+
+# CURRENT - Live State
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `03-stage-03-branding-tray.md`
+**Current branch:** `stage/02-installer-updates`
+**Stage:** 03 - Branding, System Tray & UX Polish (Finalizing)
+**Current work item:** Preparing to tag `app-v0.1.8` after final local build verification.
+**Files being edited:** None. Code is stable.
+**Blockers:** FileLu Free Tier API limit (mitigated via caching and local fallback).
+
+---
+
+## Stage 03 Status
+- [x] Branding (Icons, Windows Settings Name, Publisher)
+- [x] System Tray (Minimize to tray, Quit menu)
+- [x] Background Sync (Watcher stays active)
+- [x] Layout (Footer, Sidebar FileLu status clickable, Toast notifications)
+- [x] Ping IT (S3 Alert skeleton + Native Notification poller)
+- [x] File Viewer (Full-screen PDF/Text/Image renderer)
+- [x] File Cache (Zero-API viewing for previously opened files)
+- [x] API Limit Mitigation (1-hour polling, local fallback)
+- [ ] Push tag `app-v0.1.8` to trigger CI
+
+## Known Bugs / Limitations
+- **Bidirectional Sync:** The app currently only uploads local changes. Changes made by other users to the S3 bucket do not automatically download to the local sync folder. (Deferred to Phase 2).
+- **FileLu Free Tier API Limit:** Even with 1-hour polling, heavy browsing of files NOT in your local folder or cache may eventually hit the 1000/day limit. The app handles this gracefully with an "Offline Mode" fallback.
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.
