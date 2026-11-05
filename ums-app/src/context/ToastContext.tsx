@@ -1,5 +1,5 @@
 // Path: ums-app/src/context/ToastContext.tsx
-// Purpose: Global toast notification system for success, error, and info messages.
+// Purpose: Global toast notification system.
 
 import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
@@ -37,9 +37,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return (
         <ToastContext.Provider value={{ toast }}>
             {children}
-            <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999999, display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {toasts.map(t => (
-                    <div key={t.id} className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', minWidth: '300px', background: 'var(--ubv-bg-elevated)', borderLeft: `4px solid ${t.type === 'success' ? 'var(--ubv-success)' : t.type === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-brand-gradient-start)'}` }}>
+                    <div key={t.id} className="glass-panel" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', minWidth: '300px', background: 'var(--ubv-bg-elevated)', borderLeft: `4px solid ${t.type === 'success' ? 'var(--ubv-success)' : t.type === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-brand-gradient-start)'}`, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
                         <div style={{ color: t.type === 'success' ? 'var(--ubv-success)' : t.type === 'error' ? 'var(--ubv-danger)' : 'var(--ubv-brand-gradient-start)' }}>
                             {t.type === 'success' ? <CheckCircle2 size={20} /> : t.type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />}
                         </div>

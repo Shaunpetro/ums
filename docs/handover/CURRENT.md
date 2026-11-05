@@ -74,3 +74,51 @@ Path: docs/handover/CURRENT.md
 ## Rules for this file
 - Updated continuously, not at stage boundaries.
 - Reflects working tree state, not last commit.
+
+# CURRENT - Live State
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `02-stage-02-installer-updates.md`
+**Current branch:** `stage/02-installer-updates`
+**Stage:** 03 - Branding, System Tray & UX Polish
+**Current work item:** Testing Stage 03 features locally before pushing tag `app-v0.1.2`.
+**Files being edited:** None currently. All code saved.
+**Blockers:** None. FileLu API limit has reset.
+
+---
+
+## Stage 03 Status
+- [x] Branding (Icons, Windows Settings Name, Publisher)
+- [x] System Tray (Minimize to tray, Quit menu)
+- [x] Background Sync (Watcher stays active)
+- [x] Layout (Footer, Sidebar FileLu status clickable, Toast notifications)
+- [x] Ping IT (S3 Alert skeleton)
+- [ ] Local Test & Smoke Test
+- [ ] Push tag `app-v0.1.2`
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.
+
+# CURRENT - Live State
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `03-stage-03-branding-tray.md`
+**Current branch:** `stage/02-installer-updates`
+**Stage:** 03 - Branding, System Tray & UX Polish (Complete)
+**Current work item:** Pushing release tag `app-v0.1.2` for CI build.
+**Files being edited:** None.
+**Blockers:** None.
+
+---
+
+## Stage 03 Status
+- [x] Code & Docs committed.
+- [x] Local build successful.
+- [x] Push tag `app-v0.1.2`.
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.

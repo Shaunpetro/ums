@@ -1,5 +1,5 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with dynamic footer, tray-aware UI, and help modal.
+// Purpose: Main layout with dynamic footer, tray-aware UI, and clickable FileLu status.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity } from 'lucide-react';
@@ -30,13 +30,17 @@ export default function AppShell() {
     });
 
     const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [isCredModalOpen, setIsCredModalOpen] = useState(false);
     const [appVersion, setAppVersion] = useState('');
     const [credChecked, setCredChecked] = useState(false);
     const [credsSet, setCredsSet] = useState(false);
     const [syncChecked, setSyncChecked] = useState(false);
     const [syncReady, setSyncReady] = useState(false);
     const [syncConfig, setSyncConfig] = useState<any>(null);
+    
+    // Connection status
     const [storageUsed, setStorageUsed] = useState<number>(0);
+    const [apiError, setApiError] = useState<string | null>(null);
 
     const location = useLocation();
 
@@ -102,17 +106,27 @@ export default function AppShell() {
             });
     }, [user, credsSet]);
 
-    // Fetch Storage Usage
+    // Fetch Storage Usage (Every 1 hour to save API calls)
     useEffect(() => {
         if (!credsSet) return;
         const fetchUsage = () => {
             invoke<number>('get_storage_usage')
-                .then((bytes) => setStorageUsed(bytes))
-                .catch(console.error);
+                .then((bytes) => {
+                    setStorageUsed(bytes);
+                    setApiError(null); // Connected successfully
+                })
+                .catch((err) => {
+                    console.error("Storage usage check failed:", err);
+                    if (err.includes("AccessDenied") || err.includes("limit exceeded")) {
+                        setApiError("FileLu API limit exceeded.");
+                    } else {
+                        setApiError("Connection failed.");
+                    }
+                });
         };
 
-        fetchUsage();
-        const interval = setInterval(fetchUsage, 30000);
+        fetchUsage(); // Fetch immediately on load
+        const interval = setInterval(fetchUsage, 3600000); // 1 hour = 3,600,000 ms
         return () => clearInterval(interval);
     }, [credsSet]);
 
@@ -137,6 +151,8 @@ export default function AppShell() {
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
     const lastUpdated = new Date().toLocaleDateString(); // Placeholder for dynamic exe timestamp
 
+    const isConnected = credsSet && !apiError;
+
     return (
         <div className="app-container">
             <div className="bg-orb bg-orb-1"></div>
@@ -145,14 +161,18 @@ export default function AppShell() {
 
             {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
 
-            {!credsSet && (
+            {(!credsSet || isCredModalOpen) && (
                 <FileLuSetupModal
-                    onComplete={() => setCredsSet(true)}
-                    onLogout={logout}
+                    onComplete={() => {
+                        setCredsSet(true);
+                        setIsCredModalOpen(false);
+                    }}
+                    onLogout={!credsSet ? logout : undefined}
+                    onClose={!credsSet ? undefined : () => setIsCredModalOpen(false)}
                 />
             )}
 
-            {credsSet && syncChecked && !syncReady && (
+            {credsSet && syncChecked && !syncReady && !isCredModalOpen && (
                 <SyncSetupModal
                     userPath={user.path}
                     onComplete={(path, prefix) => {
@@ -189,11 +209,18 @@ export default function AppShell() {
                 </nav>
 
                 <div className="sidebar-bottom">
-                    {/* FileLu Status */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '12px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: credsSet ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
-                        <span className="marker" style={{ fontSize: '12px', fontWeight: 600 }}>FileLu {credsSet ? 'Connected' : 'Disconnected'}</span>
-                    </div>
+                    {/* FileLu Status - Clickable */}
+                    <button 
+                        className="text-btn" 
+                        onClick={() => setIsCredModalOpen(true)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '12px', width: '100%', justifyContent: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        title="Click to reconnect or change keys"
+                    >
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isConnected ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
+                        <span className="marker" style={{ fontSize: '12px', fontWeight: 600, color: isConnected ? 'var(--ubv-text-main)' : 'var(--ubv-danger)' }}>
+                            FileLu {isConnected ? 'Connected' : 'Disconnected'}
+                        </span>
+                    </button>
 
                     <div className="storage-quota">
                         <div className="flex-between" style={{ marginBottom: '8px' }}>

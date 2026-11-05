@@ -7,7 +7,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { useToast } from '../context/ToastContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen } from 'lucide-react';
 
 interface S3Object {
     key: string;
@@ -107,6 +107,13 @@ export default function Storage() {
         }
     };
 
+    const handleOpenLocal = () => {
+        if (syncConfig?.local_path) {
+            invoke('open_local_folder', { path: syncConfig.local_path })
+                .catch(err => toast(`Failed to open folder: ${err}`, 'error'));
+        }
+    };
+
     const formatSize = (bytes: number) => {
         if (bytes === 0) return '0 B';
         const k = 1024; const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -169,9 +176,21 @@ export default function Storage() {
                 <div className="page-header flex-between" style={{ marginBottom: '24px' }}>
                     <div>
                         <h1 style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px' }}>Storage Drive</h1>
-                        <p className="marker">
-                            {syncConfig ? `Local Sync Active: ${syncConfig.local_path}` : `Cloud Workspace: ${user.path}`}
-                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <p className="marker">
+                                {syncConfig ? `Local Sync Active: ${syncConfig.local_path}` : `Cloud Workspace: ${user.path}`}
+                            </p>
+                            {syncConfig && (
+                                <button 
+                                    className="icon-btn" 
+                                    onClick={handleOpenLocal} 
+                                    title="Open local folder in Windows Explorer"
+                                    style={{ padding: '4px' }}
+                                >
+                                    <FolderOpen size={16} color="var(--ubv-brand-gradient-start)" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px' }}>
                         <button className="outline-btn" onClick={() => fetchFiles()}><RefreshCw size={16} /></button>

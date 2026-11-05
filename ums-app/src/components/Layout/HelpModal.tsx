@@ -75,8 +75,8 @@ export default function HelpModal({ onClose }: Props) {
     const whatsappLink = "https://wa.me/27813877744?text=Hi%20Petro,%20I%20need%20help%20with%20Ubuveil%20MS.";
 
     return (
-        <div className="modal-overlay open" onClick={onClose}>
-            <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.9)', backdropFilter: 'blur(10px)' }}>
+            <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', minHeight: '400px', display: 'flex', flexDirection: 'column', border: '1px solid var(--ubv-brand-gradient-start)' }}>
                 <div className="modal-header">
                     <h2 className="modal-title">Help & Support</h2>
                     <button className="modal-close" onClick={onClose}><X size={20} /></button>

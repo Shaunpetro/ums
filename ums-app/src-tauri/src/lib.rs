@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend supporting keyring credentials, per-user sync lifecycle, system tray, and alerts.
+// Purpose: Tauri backend with background sync, tray menu, keyring credentials, and IT alert polling.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -18,6 +18,7 @@ use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, State, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
 use walkdir::WalkDir;
 
 // --- KEYRING ---
@@ -137,24 +138,27 @@ async fn set_filelu_credentials(
     endpoint: String,
     bucket: String,
 ) -> Result<(), String> {
-    if access_key.trim().is_empty() || secret_key.trim().is_empty() {
-        return Err("Access key and secret key are required".to_string());
+    let current_access = get_credential(KEYRING_ACCESS).unwrap_or_default();
+    let current_secret = get_credential(KEYRING_SECRET).unwrap_or_default();
+
+    let new_access = if access_key.trim().is_empty() { current_access } else { access_key.trim().to_string() };
+    let new_secret = if secret_key.trim().is_empty() { current_secret } else { secret_key.trim().to_string() };
+
+    if new_access.is_empty() || new_secret.is_empty() {
+        return Err("Access key and secret key are required for initial setup.".to_string());
     }
-    let endpoint_final = if endpoint.trim().is_empty() {
-        "https://eu.s5lu.com".to_string()
-    } else {
-        endpoint
-    };
-    let bucket_final = if bucket.trim().is_empty() {
-        "ums-prod".to_string()
-    } else {
-        bucket
-    };
-    set_credential(KEYRING_ACCESS, access_key.trim())?;
-    set_credential(KEYRING_SECRET, secret_key.trim())?;
-    set_credential(KEYRING_ENDPOINT, &endpoint_final)?;
-    set_credential(KEYRING_BUCKET, &bucket_final)?;
-    log("FileLu credentials stored in keyring");
+
+    set_credential(KEYRING_ACCESS, &new_access)?;
+    set_credential(KEYRING_SECRET, &new_secret)?;
+    
+    if !endpoint.trim().is_empty() {
+        set_credential(KEYRING_ENDPOINT, endpoint.trim())?;
+    }
+    if !bucket.trim().is_empty() {
+        set_credential(KEYRING_BUCKET, bucket.trim())?;
+    }
+
+    log("FileLu credentials updated in keyring");
     Ok(())
 }
 
@@ -268,6 +272,12 @@ async fn start_sync_for_user(
         None => return Ok(false),
     };
 
+    // Check if the local folder still exists (e.g. user didn't rename it)
+    if !Path::new(&config.local_path).exists() {
+        log(&format!("Local sync folder missing: {}", config.local_path));
+        return Ok(false);
+    }
+
     {
         let guard = state.watchers.lock().unwrap();
         if guard.contains_key(&safe_target) {
@@ -299,6 +309,14 @@ async fn stop_sync_for_user(
     let safe_target = sanitize_prefix(&user_path);
     stop_watcher_for_prefix(&state, &safe_target);
     Ok(())
+}
+
+// --- OPENER ---
+
+#[tauri::command]
+fn open_local_folder(path: String) -> Result<(), String> {
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|e| format!("Failed to open folder: {}", e))
 }
 
 // --- WATCHER ---
@@ -561,11 +579,14 @@ async fn send_it_alert(
     issue: String,
 ) -> Result<(), String> {
     let (client, bucket) = get_s3_client().await?;
-    let timestamp = Local::now().format("%Y-%m-%dT%H-%M-%S").to_string();
+    let now = Local::now();
+    let file_timestamp = now.format("%Y-%m-%d_%H-%M-%S").to_string();
+    let human_timestamp = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    
     let key = format!(
         "{}/it_alerts/{}_{}.json",
         user_org,
-        timestamp,
+        file_timestamp,
         user_name.replace(" ", "_")
     );
 
@@ -574,7 +595,7 @@ async fn send_it_alert(
         "user_org": user_org,
         "user_dept": user_dept,
         "issue": issue,
-        "timestamp": timestamp,
+        "timestamp": human_timestamp,
         "status": "open"
     });
 
@@ -590,9 +611,51 @@ async fn send_it_alert(
         .await
         .map_err(|e| format!("Failed to send alert: {:?}", e))?;
 
-    // TODO: Integrate Resend API in Phase 4 for email fallback
     log(&format!("IT Alert saved to S3: {}", key));
     Ok(())
+}
+
+async fn poll_it_alerts(app: tauri::AppHandle) {
+    let mut last_seen_key = String::new();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    loop {
+        if let Ok((client, bucket)) = get_s3_client().await {
+            if let Ok(resp) = client
+                .list_objects_v2()
+                .bucket(&bucket)
+                .prefix("VSC Mining/it_alerts/")
+                .send()
+                .await
+            {
+                if let Some(contents) = resp.contents {
+                    if last_seen_key.is_empty() {
+                        if let Some(newest) = contents.last() {
+                            if let Some(k) = &newest.key {
+                                last_seen_key = k.clone();
+                            }
+                        }
+                    } else {
+                        for obj in contents {
+                            if let Some(key) = &obj.key {
+                                if key > &last_seen_key && key.ends_with(".json") {
+                                    let msg = format!("New IT Alert from {}", key.split('_').last().unwrap_or("User").replace(".json", ""));
+                                    let _ = app.notification()
+                                        .builder()
+                                        .title("Ubuveil IT Support")
+                                        .body(&msg)
+                                        .show();
+                                    
+                                    last_seen_key = key.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(120)).await;
+    }
 }
 
 // --- STORAGE USAGE ---
@@ -822,7 +885,8 @@ pub fn run() {
             clear_filelu_credentials,
             start_sync_for_user,
             stop_sync_for_user,
-            send_it_alert
+            send_it_alert,
+            open_local_folder
         ])
         .setup(|app| {
             log("UMS backend ready");
@@ -863,6 +927,12 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Start background alert poller
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                poll_it_alerts(handle).await;
+            });
 
             Ok(())
         })
