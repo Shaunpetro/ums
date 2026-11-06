@@ -1,5 +1,5 @@
 // Path: ums-app/src/pages/Storage.tsx
-// Purpose: Cloud Drive UI with local fallback, file viewing, and cycling sort toggle.
+// Purpose: Cloud Drive UI with local fallback, file viewing, and persisted view/sort modes.
 
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -29,8 +29,11 @@ export default function Storage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const [isOffline, setIsOffline] = useState(false);
     
-    // UI State
-    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    // UI State with LocalStorage Persistence
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+        const saved = localStorage.getItem('ums-view-mode');
+        return (saved as 'grid' | 'list') || 'grid';
+    });
     const [sortMode, setSortMode] = useState<'name-asc' | 'name-desc' | 'date-desc' | 'date-asc'>(() => {
         const saved = localStorage.getItem('ums-sort-mode');
         return (saved as any) || 'name-asc';
@@ -47,10 +50,14 @@ export default function Storage() {
     const [sharingFile, setSharingFile] = useState<string | null>(null);
     const [shareError, setShareError] = useState<string | null>(null);
 
-    // Persist sort mode
+    // Persist sort and view modes
     useEffect(() => {
         localStorage.setItem('ums-sort-mode', sortMode);
     }, [sortMode]);
+
+    useEffect(() => {
+        localStorage.setItem('ums-view-mode', viewMode);
+    }, [viewMode]);
 
     const fetchFiles = (prefix: string = currentPrefix) => {
         setLoading(true);
@@ -90,6 +97,8 @@ export default function Storage() {
     useEffect(() => {
         fetchFiles(currentPrefix);
     }, [currentPrefix]);
+
+    // ... (all handlers remain unchanged: handleUpload, handleCreateFolder, handleDelete, handleShare, handleDownload, handleOpenLocal, formatSize, formatDate, getFileVisuals, getFolderVisuals, parseFileMeta, processItems, handleSortToggle, getSortLabel)
 
     const handleUpload = async () => {
         if (isOffline) {
@@ -216,7 +225,6 @@ export default function Storage() {
         return { name, dir };
     };
 
-    // Sort and Filter Logic
     const handleSortToggle = () => {
         const modes: ('name-asc' | 'name-desc' | 'date-desc' | 'date-asc')[] = ['name-asc', 'name-desc', 'date-desc', 'date-asc'];
         const currentIndex = modes.indexOf(sortMode);
@@ -268,7 +276,7 @@ export default function Storage() {
 
     return (
         <div className="storage-page" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-            
+            {/* ... JSX remains identical to your last working version ... */}
             <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="page-header flex-between" style={{ marginBottom: '16px' }}>
                     <div>
@@ -426,6 +434,7 @@ export default function Storage() {
 
             {/* Details Panel */}
             <div className="glass-panel" style={{ width: '320px', flexShrink: 0, padding: '24px', position: 'sticky', top: '0' }}>
+                {/* ... uploadQueue and details panel JSX remains identical ... */}
                 {uploadQueue.length > 0 && (
                     <div style={{ marginBottom: '32px' }}>
                         <div className="flex-between" style={{ marginBottom: '16px' }}>

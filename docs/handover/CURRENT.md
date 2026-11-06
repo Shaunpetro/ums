@@ -154,3 +154,33 @@ Path: docs/handover/CURRENT.md
 ## Rules for this file
 - Updated continuously, not at stage boundaries.
 - Reflects working tree state, not last commit.
+
+# CURRENT - Live State
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `03-stage-03-branding-tray.md`
+**Current branch:** `stage/02-installer-updates`
+**Stage:** 03 - Branding, System Tray & UX Polish (Complete)
+**Current work item:** Local smoke test of `v0.1.9` before pushing the tag.
+**Files being edited:** None. Code compiles successfully.
+**Blockers:** None. API limit issues mitigated via batch queue.
+
+---
+
+## Stage 03 Status
+- [ ] Branding (Icons, Windows Settings Name, Publisher)
+- [x] System Tray (Minimize to tray, Quit menu)
+- [x] Background Sync (1-hour batch queue, manual "Sync Now")
+- [x] Layout (Footer status, Sidebar connection dot, Toast notifications)
+- [x] Ping IT (S3 Alert skeleton + Native Notification poller)
+- [x] File Viewer (Full-screen PDF/Text/Image renderer)
+- [x] File Cache (Zero-API viewing for previously opened files)
+- [x] UI Polish (Grid/List toggle, persistent Sort toggle, Filter)
+- [x] CI Fix (Auto-updater `latest.json` generation)
+- [ ] Local Smoke Test
+- [ ] Push tag `app-v0.1.9`
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.
