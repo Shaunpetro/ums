@@ -2,11 +2,13 @@
 // Purpose: Main layout with dynamic footer, tray-aware UI, and centralized FileLu connection state.
 
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
+import { listen } from '@tauri-apps/api/event';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import SyncSetupModal from './SyncSetupModal';
 import FileLuSetupModal from './FileLuSetupModal';
 import HelpModal from './HelpModal';
@@ -24,6 +26,7 @@ const NAV_ITEMS = [
 
 export default function AppShell() {
     const { user, logout } = useAuth();
+    const { toast } = useToast();
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const savedTheme = localStorage.getItem('ums-theme');
         return savedTheme ? savedTheme === 'dark' : true;
@@ -43,6 +46,10 @@ export default function AppShell() {
     const [isConnected, setIsConnected] = useState(true);
     const [apiError, setApiError] = useState<string | null>(null);
 
+    // Pending Queue State
+    const [pendingCount, setPendingCount] = useState(0);
+    const [isFlushing, setIsFlushing] = useState(false);
+
     const location = useLocation();
 
     useEffect(() => {
@@ -58,6 +65,23 @@ export default function AppShell() {
             localStorage.setItem('ums-theme', 'light');
         }
     }, [isDarkMode]);
+
+    // Listen for Sync Status updates
+    useEffect(() => {
+        const unlisten = listen<any>('sync-status', (event) => {
+            const { status, message } = event.payload;
+            if (status === 'pending') {
+                setPendingCount(prev => prev + 1);
+            } else if (status === 'flushing') {
+                setIsFlushing(true);
+            } else if (status === 'success' && message) {
+                setPendingCount(0);
+                setIsFlushing(false);
+                toast(message, 'success');
+            }
+        });
+        return () => { unlisten.then(f => f()); };
+    }, [toast]);
 
     useEffect(() => {
         if (!user) return;
@@ -144,6 +168,17 @@ export default function AppShell() {
         }
     };
 
+    const handleManualSync = async () => {
+        setIsFlushing(true);
+        try {
+            await invoke('flush_pending_uploads');
+            // The event listener will set isFlushing to false and fire the toast
+        } catch (err) {
+            toast(`Manual sync failed: ${err}`, 'error');
+            setIsFlushing(false);
+        }
+    };
+
     const getSearchPlaceholder = () => {
         const current = NAV_ITEMS.find(item => item.path === location.pathname);
         return current ? `Search in ${current.label}...` : 'Search all pipelines...';
@@ -165,9 +200,7 @@ export default function AppShell() {
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
     const lastUpdated = new Date().toLocaleDateString();
     const finalConnectedState = credsSet && isConnected;
-    
-    // True sync status depends on BOTH local watcher and cloud connection
-    const isFullySyncing = syncReady && finalConnectedState;
+    const isFullySyncing = syncReady && finalConnectedState && !isFlushing;
 
     return (
         <div className="app-container">
@@ -212,7 +245,6 @@ export default function AppShell() {
 
             <aside className="sidebar glass-panel">
                 <div className="brand">
-                    {/* Fallback in case logo fails to load */}
                     <img 
                         src="/logo-horizontal-white.svg" 
                         alt="Ubuveil" 
@@ -257,6 +289,9 @@ export default function AppShell() {
                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: finalConnectedState ? 'var(--ubv-success)' : 'var(--ubv-danger)' }}></div>
                         <span className="marker" style={{ fontSize: '12px', fontWeight: 600, color: finalConnectedState ? 'var(--ubv-text-main)' : 'var(--ubv-danger)' }}>
                             FileLu {finalConnectedState ? 'Connected' : 'Disconnected'}
+                        </span>
+                        <span className="marker" style={{ fontSize: '11px', color: 'var(--ubv-warning)', marginLeft: 'auto', paddingRight: '12px' }}>
+                            {isFlushing ? 'Syncing...' : pendingCount > 0 ? `${pendingCount} pending` : 'Synced'}
                         </span>
                     </button>
 
@@ -315,6 +350,10 @@ export default function AppShell() {
                         Ubuveil MS (c) ARR
                     </div>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <button className="text-btn" onClick={handleManualSync} disabled={isFlushing || pendingCount === 0} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', color: pendingCount > 0 ? 'var(--ubv-warning)' : 'var(--ubv-text-muted)' }}>
+                            <RefreshCw size={10} className={isFlushing ? 'spin' : ''} />
+                            Sync Now
+                        </button>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Activity size={12} color={isFullySyncing ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
                             {isFullySyncing ? 'Sync Active' : 'Sync Paused'}

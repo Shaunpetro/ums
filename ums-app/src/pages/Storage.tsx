@@ -1,5 +1,5 @@
 // Path: ums-app/src/pages/Storage.tsx
-// Purpose: Cloud Drive UI with local fallback, global status reporting, and double-click file viewing.
+// Purpose: Cloud Drive UI with local fallback, file viewing, and cycling sort toggle.
 
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -7,7 +7,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useUploads } from '../context/UploadContext';
 import { useToast } from '../context/ToastContext';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, Clock, FileImage, FileArchive, FileSpreadsheet, FolderOpen, Eye, WifiOff } from 'lucide-react';
+import { Folder, FileText, Loader2, AlertCircle, Building2, Briefcase, ChevronRight, X, RefreshCw, CheckCircle2, Home, User as UserIcon, FileImage, FileArchive, FileSpreadsheet, FolderOpen, Eye, WifiOff, LayoutGrid, List, Search, ArrowUpDown } from 'lucide-react';
 import FileViewerModal from '../components/Layout/FileViewerModal';
 
 interface S3Object {
@@ -29,7 +29,14 @@ export default function Storage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const [isOffline, setIsOffline] = useState(false);
     
-    // Added lastModified to viewingFile state
+    // UI State
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [sortMode, setSortMode] = useState<'name-asc' | 'name-desc' | 'date-desc' | 'date-asc'>(() => {
+        const saved = localStorage.getItem('ums-sort-mode');
+        return (saved as any) || 'name-asc';
+    });
+    const [filterQuery, setFilterQuery] = useState('');
+
     const [viewingFile, setViewingFile] = useState<{ key: string, name: string, lastModified: string | null } | null>(null);
 
     const { uploadQueue, addUpload, failUpload, clearUploads } = useUploads();
@@ -40,9 +47,15 @@ export default function Storage() {
     const [sharingFile, setSharingFile] = useState<string | null>(null);
     const [shareError, setShareError] = useState<string | null>(null);
 
+    // Persist sort mode
+    useEffect(() => {
+        localStorage.setItem('ums-sort-mode', sortMode);
+    }, [sortMode]);
+
     const fetchFiles = (prefix: string = currentPrefix) => {
         setLoading(true);
         setSelectedItem(null); 
+        setFilterQuery('');
         invoke<S3Object[]>('list_files', { prefix })
             .then((data) => { 
                 setFiles(data); 
@@ -80,7 +93,7 @@ export default function Storage() {
 
     const handleUpload = async () => {
         if (isOffline) {
-            toast('Cannot upload while offline. Please reconnect to FileLu.', 'error');
+            toast('Cannot upload while offline.', 'error');
             return;
         }
         try {
@@ -143,7 +156,7 @@ export default function Storage() {
 
     const handleDownload = async (key: string) => {
         if (isOffline) {
-            toast('Cannot download from cloud while offline. Check your local folder.', 'error');
+            toast('Cannot download from cloud while offline.', 'error');
             return;
         }
         setDownloading(key);
@@ -178,19 +191,19 @@ export default function Storage() {
 
     const getFileVisuals = (fileName: string) => {
         const ext = fileName.split('.').pop()?.toLowerCase() || '';
-        if (['pdf'].includes(ext)) return { icon: <FileText size={24} />, color: '#EB6F65' };
-        if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return { icon: <FileText size={24} />, color: '#4B9CD3' };
-        if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: <FileSpreadsheet size={24} />, color: '#2BB673' };
-        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { icon: <FileArchive size={24} />, color: '#F5AB82' };
-        if (['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) return { icon: <FileImage size={24} />, color: '#9B59B6' };
-        return { icon: <FileText size={24} />, color: 'var(--ubv-text-muted)' };
+        if (['pdf'].includes(ext)) return { icon: <FileText size={viewMode === 'grid' ? 24 : 18} />, color: '#EB6F65' };
+        if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return { icon: <FileText size={viewMode === 'grid' ? 24 : 18} />, color: '#4B9CD3' };
+        if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: <FileSpreadsheet size={viewMode === 'grid' ? 24 : 18} />, color: '#2BB673' };
+        if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { icon: <FileArchive size={viewMode === 'grid' ? 24 : 18} />, color: '#F5AB82' };
+        if (['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'].includes(ext)) return { icon: <FileImage size={viewMode === 'grid' ? 24 : 18} />, color: '#9B59B6' };
+        return { icon: <FileText size={viewMode === 'grid' ? 24 : 18} />, color: 'var(--ubv-text-muted)' };
     };
 
     const getFolderVisuals = (key: string) => {
         const depth = key.split('/').filter(Boolean).length;
-        if (depth === 1) return { icon: <Building2 size={24} />, color: '#EAB308' }; 
-        if (depth === 2) return { icon: <Briefcase size={24} />, color: '#a4b5d6' }; 
-        return { icon: <Folder size={24} />, color: 'var(--ubv-text-muted)' }; 
+        if (depth === 1) return { icon: <Building2 size={viewMode === 'grid' ? 24 : 18} />, color: '#EAB308' }; 
+        if (depth === 2) return { icon: <Briefcase size={viewMode === 'grid' ? 24 : 18} />, color: '#a4b5d6' }; 
+        return { icon: <Folder size={viewMode === 'grid' ? 24 : 18} />, color: 'var(--ubv-text-muted)' }; 
     };
 
     const parseFileMeta = (key: string, isFolder: boolean) => {
@@ -203,9 +216,43 @@ export default function Storage() {
         return { name, dir };
     };
 
-    const folders = files.filter(f => f.is_folder);
-    const fileItems = files.filter(f => !f.is_folder);
-    const recentFiles = fileItems.slice(0, 3); 
+    // Sort and Filter Logic
+    const handleSortToggle = () => {
+        const modes: ('name-asc' | 'name-desc' | 'date-desc' | 'date-asc')[] = ['name-asc', 'name-desc', 'date-desc', 'date-asc'];
+        const currentIndex = modes.indexOf(sortMode);
+        setSortMode(modes[(currentIndex + 1) % modes.length]);
+    };
+
+    const getSortLabel = () => {
+        if (sortMode === 'name-asc') return 'A - Z';
+        if (sortMode === 'name-desc') return 'Z - A';
+        if (sortMode === 'date-desc') return 'Newest';
+        if (sortMode === 'date-asc') return 'Oldest';
+        return 'Sort';
+    };
+
+    const processItems = (items: S3Object[], isFolder: boolean) => {
+        let processed = items.filter(f => 
+            parseFileMeta(f.key, isFolder).name.toLowerCase().includes(filterQuery.toLowerCase())
+        );
+
+        processed.sort((a, b) => {
+            const nameA = parseFileMeta(a.key, isFolder).name.toLowerCase();
+            const nameB = parseFileMeta(b.key, isFolder).name.toLowerCase();
+            const dateA = a.last_modified ? new Date(a.last_modified).getTime() : 0;
+            const dateB = b.last_modified ? new Date(b.last_modified).getTime() : 0;
+
+            if (sortMode === 'name-asc') return nameA.localeCompare(nameB);
+            if (sortMode === 'name-desc') return nameB.localeCompare(nameA);
+            if (sortMode === 'date-desc') return dateB - dateA;
+            if (sortMode === 'date-asc') return dateA - dateB;
+            return 0;
+        });
+        return processed;
+    };
+
+    const folders = processItems(files.filter(f => f.is_folder), true);
+    const fileItems = processItems(files.filter(f => !f.is_folder), false);
 
     const isAtRoot = currentPrefix === '' || currentPrefix === '/';
     const cleanPrefix = currentPrefix.replace(/\/$/, '');
@@ -223,7 +270,7 @@ export default function Storage() {
         <div className="storage-page" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
             
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="page-header flex-between" style={{ marginBottom: '24px' }}>
+                <div className="page-header flex-between" style={{ marginBottom: '16px' }}>
                     <div>
                         <h1 style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px' }}>Storage Drive</h1>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -231,12 +278,7 @@ export default function Storage() {
                                 {syncConfig ? `Local Sync Active: ${syncConfig.local_path}` : `Cloud Workspace: ${user.path}`}
                             </p>
                             {syncConfig && (
-                                <button 
-                                    className="icon-btn" 
-                                    onClick={handleOpenLocal} 
-                                    title="Open local folder in Windows Explorer"
-                                    style={{ padding: '4px' }}
-                                >
+                                <button className="icon-btn" onClick={handleOpenLocal} title="Open local folder" style={{ padding: '4px' }}>
                                     <FolderOpen size={16} color="var(--ubv-brand-gradient-start)" />
                                 </button>
                             )}
@@ -250,18 +292,19 @@ export default function Storage() {
                 </div>
 
                 {isOffline && (
-                    <div className="glass-panel flex-between" style={{ padding: '16px 24px', marginBottom: '24px', borderLeft: '4px solid var(--ubv-warning)', background: 'rgba(245, 171, 130, 0.1)' }}>
+                    <div className="glass-panel flex-between" style={{ padding: '16px 24px', marginBottom: '16px', borderLeft: '4px solid var(--ubv-warning)', background: 'rgba(245, 171, 130, 0.1)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <WifiOff size={24} color="var(--ubv-warning)" />
                             <div>
                                 <h3 style={{ fontSize: '16px', marginBottom: '4px', color: 'var(--ubv-warning)' }}>Offline Mode</h3>
-                                <p className="marker">Showing local files. Cloud sync is paused until the connection is restored.</p>
+                                <p className="marker">Showing local files. Cloud sync is paused until connection is restored.</p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                {/* Breadcrumbs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <button className="text-btn" onClick={() => setCurrentPrefix('')} style={{ display: 'flex', alignItems: 'center', color: isAtRoot ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="Storage Root"><Home size={18} /></button>
                     <span style={{ color: 'var(--ubv-text-muted)' }}>|</span>
                     <button className="text-btn" onClick={() => setCurrentPrefix(`${user.path}/`)} style={{ display: 'flex', alignItems: 'center', color: isUserHome ? 'var(--ubv-text-main)' : 'var(--ubv-text-muted)' }} title="My Workspace"><UserIcon size={18} /></button>
@@ -273,53 +316,63 @@ export default function Storage() {
                     ))}
                 </div>
 
+                {/* Filter & Sort Toolbar */}
+                <div className="glass-panel flex-between" style={{ padding: '12px 16px', marginBottom: '24px', background: 'rgba(128,128,128,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, maxWidth: '300px' }}>
+                        <Search size={16} color="var(--ubv-text-muted)" />
+                        <input 
+                            type="text" 
+                            placeholder="Filter by name..." 
+                            value={filterQuery}
+                            onChange={(e) => setFilterQuery(e.target.value)}
+                            className="form-input" 
+                            style={{ background: 'transparent', border: 'none', padding: '4px 8px', fontSize: '13px' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <button className="outline-btn" onClick={handleSortToggle} style={{ minWidth: '80px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <ArrowUpDown size={14} /> {getSortLabel()}
+                        </button>
+                        <div style={{ display: 'flex', gap: '4px', background: 'rgba(128,128,128,0.1)', padding: '4px', borderRadius: '6px' }}>
+                            <button className={`icon-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')} style={{ opacity: viewMode === 'grid' ? 1 : 0.5 }}><LayoutGrid size={16} /></button>
+                            <button className={`icon-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')} style={{ opacity: viewMode === 'list' ? 1 : 0.5 }}><List size={16} /></button>
+                        </div>
+                    </div>
+                </div>
+
                 {loading ? (
                     <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>Loading...</div>
                 ) : files.length === 0 ? (
                     <div className="glass-panel marker" style={{ padding: '48px', textAlign: 'center' }}>This folder is empty.</div>
                 ) : (
                     <div>
-                        {isUserHome && recentFiles.length > 0 && (
-                            <div style={{ marginBottom: '32px' }}>
-                                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Clock size={16} /> Recent Updates</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-                                    {recentFiles.map(file => {
-                                        const visuals = getFileVisuals(file.key);
-                                        const { name } = parseFileMeta(file.key, false);
-                                        return (
-                                            <div 
-                                                key={`recent-${file.key}`} 
-                                                className="glass-panel" 
-                                                style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} 
-                                                onClick={() => setSelectedItem(file)}
-                                                onDoubleClick={() => setViewingFile({ key: file.key, name: parseFileMeta(file.key, false).name, lastModified: file.last_modified })}
-                                                title="Double click to open"
-                                            >
-                                                <div style={{ color: visuals.color }}>{visuals.icon}</div>
-                                                <div>
-                                                    <div style={{ fontWeight: 500, fontSize: '14px', wordBreak: 'break-all' }}>{name}</div>
-                                                    <div className="marker" style={{ fontSize: '11px' }}>{formatDate(file.last_modified)}</div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
+                        {/* Folders */}
                         {folders.length > 0 && (
                             <div style={{ marginBottom: '32px' }}>
-                                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Folders</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                                <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: 'var(--ubv-text-muted)', marginBottom: '16px' }}>Folders</h3>
+                                <div style={{ display: viewMode === 'grid' ? 'grid' : 'flex', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', flexDirection: 'column', gap: viewMode === 'grid' ? '16px' : '8px' }}>
                                     {folders.map((folder) => {
                                         const { name } = parseFileMeta(folder.key, true);
                                         const visuals = getFolderVisuals(folder.key);
                                         return (
-                                            <div key={folder.key} className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === folder.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }} onClick={() => setSelectedItem(folder)}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', userSelect: 'none' }} onDoubleClick={() => setCurrentPrefix(folder.key)}>
-                                                    <div style={{ color: visuals.color }}>{visuals.icon}</div>
-                                                    <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
-                                                </div>
+                                            <div 
+                                                key={folder.key} 
+                                                className="glass-panel" 
+                                                style={{ 
+                                                    padding: viewMode === 'grid' ? '16px' : '10px 16px', 
+                                                    display: 'flex', 
+                                                    flexDirection: viewMode === 'grid' ? 'column' : 'row', 
+                                                    alignItems: viewMode === 'grid' ? 'flex-start' : 'center',
+                                                    gap: viewMode === 'grid' ? '12px' : '12px', 
+                                                    cursor: 'pointer', 
+                                                    border: selectedItem?.key === folder.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' 
+                                                }} 
+                                                onClick={() => setSelectedItem(folder)}
+                                                onDoubleClick={() => setCurrentPrefix(folder.key)}
+                                                title="Double click to open"
+                                            >
+                                                <div style={{ color: visuals.color }}>{visuals.icon}</div>
+                                                <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
                                             </div>
                                         );
                                     })}
@@ -327,10 +380,11 @@ export default function Storage() {
                             </div>
                         )}
 
+                        {/* Files */}
                         {fileItems.length > 0 && (
                             <div>
-                                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Files</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                                <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: 'var(--ubv-text-muted)', marginBottom: '16px' }}>Files</h3>
+                                <div style={{ display: viewMode === 'grid' ? 'grid' : 'flex', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', flexDirection: 'column', gap: viewMode === 'grid' ? '16px' : '8px' }}>
                                     {fileItems.map((file) => {
                                         const visuals = getFileVisuals(file.key);
                                         const { name } = parseFileMeta(file.key, false);
@@ -338,17 +392,27 @@ export default function Storage() {
                                             <div 
                                                 key={file.key} 
                                                 className="glass-panel" 
-                                                style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', border: selectedItem?.key === file.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' }} 
+                                                style={{ 
+                                                    padding: viewMode === 'grid' ? '16px' : '10px 16px', 
+                                                    display: 'flex', 
+                                                    flexDirection: viewMode === 'grid' ? 'column' : 'row', 
+                                                    alignItems: viewMode === 'grid' ? 'flex-start' : 'center',
+                                                    justifyContent: viewMode === 'grid' ? 'flex-start' : 'space-between',
+                                                    gap: viewMode === 'grid' ? '12px' : '12px', 
+                                                    cursor: 'pointer', 
+                                                    border: selectedItem?.key === file.key ? '1px solid var(--ubv-brand-gradient-start)' : '1px solid var(--ubv-glass-border)' 
+                                                }} 
                                                 onClick={() => setSelectedItem(file)}
                                                 onDoubleClick={() => setViewingFile({ key: file.key, name: parseFileMeta(file.key, false).name, lastModified: file.last_modified })}
                                                 title="Double click to open"
                                             >
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', userSelect: 'none' }}>
                                                     <div style={{ color: visuals.color }}>{visuals.icon}</div>
-                                                    <div><div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div></div>
+                                                    <div style={{ fontWeight: 500, wordBreak: 'break-all', fontSize: '14px' }}>{name}</div>
                                                 </div>
-                                                <div className="flex-between" style={{ marginTop: 'auto' }}>
+                                                <div className="flex-between" style={{ marginTop: viewMode === 'grid' ? 'auto' : 0, width: viewMode === 'grid' ? '100%' : 'auto' }}>
                                                     <span className="marker" style={{ fontSize: '11px', textTransform: 'uppercase' }}>{formatSize(file.size)}</span>
+                                                    {viewMode === 'list' && <span className="marker" style={{ fontSize: '11px', marginLeft: '16px' }}>{formatDate(file.last_modified)}</span>}
                                                 </div>
                                             </div>
                                         );
@@ -360,6 +424,7 @@ export default function Storage() {
                 )}
             </div>
 
+            {/* Details Panel */}
             <div className="glass-panel" style={{ width: '320px', flexShrink: 0, padding: '24px', position: 'sticky', top: '0' }}>
                 {uploadQueue.length > 0 && (
                     <div style={{ marginBottom: '32px' }}>

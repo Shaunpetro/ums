@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend with background sync, tray menu, keyring credentials, IT alerts, file previews, and local caching.
+// Purpose: Tauri backend with 1-hour background sync queue, tray menu, keyring credentials, and caching.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -10,14 +10,14 @@ use aws_sdk_s3::Client;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Local;
 use keyring::Entry;
-use notify::{RecursiveMode, Watcher};
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, State, WindowEvent};
@@ -95,6 +95,7 @@ pub struct CredentialStatus {
 
 pub struct AppState {
     pub watchers: Mutex<HashMap<String, notify::RecommendedWatcher>>,
+    pub pending_uploads: Mutex<HashMap<String, (PathBuf, Instant)>>,
 }
 
 fn log(msg: &str) {
@@ -266,12 +267,12 @@ fn open_local_folder(path: String) -> Result<(), String> {
 // --- WATCHER ---
 
 fn start_watcher(app: tauri::AppHandle, state: State<'_, AppState>, path_str: String, target_prefix: String) -> Result<(), String> {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
-            if matches!(event.kind, notify::EventKind::Create(_) | notify::EventKind::Modify(_)) {
-                for path in event.paths { let _ = tx.send(path); }
+            if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                let _ = tx.send(event);
             }
         }
     }).map_err(|e| e.to_string())?;
@@ -284,72 +285,36 @@ fn start_watcher(app: tauri::AppHandle, state: State<'_, AppState>, path_str: St
     let target_prefix_clone = target_prefix.clone();
 
     tauri::async_runtime::spawn(async move {
-        while let Some(path) = rx.recv().await {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" { continue; }
-            }
-            let app_task = app_handle.clone();
-            let base_task = base_path.clone();
-            let target_task = target_prefix_clone.clone();
-            let path_task = path.clone();
+        while let Some(event) = rx.recv().await {
+            for path in event.paths {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" { continue; }
+                }
+                
+                if let Ok(rel_path) = path.strip_prefix(&base_path) {
+                    let rel_str = rel_path.to_string_lossy().replace("\\", "/");
+                    let full_s3_key = format!("{}{}", target_prefix_clone, rel_str);
 
-            tauri::async_runtime::spawn(async move {
-                handle_watcher_event(app_task, base_task, target_task, path_task).await;
-            });
+                    if path.is_dir() {
+                        let key = format!("{}/", full_s3_key);
+                        if let Ok((client, bucket)) = get_s3_client().await {
+                            let _ = client.put_object().bucket(bucket).key(&key).body(ByteStream::from_static(b"")).send().await;
+                        }
+                    } else if path.is_file() {
+                        let state = app_handle.state::<AppState>();
+                        {
+                            let mut guard = state.pending_uploads.lock().unwrap();
+                            guard.insert(full_s3_key, (path.clone(), Instant::now()));
+                        }
+                        let _ = app_handle.emit("sync-status", serde_json::json!({ "status": "pending", "message": format!("File queued for sync.") }));
+                    }
+                }
+            }
         }
     });
 
     log(&format!("Started watching: {} -> {}", path_str, target_prefix));
     Ok(())
-}
-
-async fn handle_watcher_event(app_handle: tauri::AppHandle, base_path: PathBuf, target_prefix: String, path: PathBuf) {
-    let rel_path = match path.strip_prefix(&base_path) { Ok(p) => p.to_path_buf(), Err(_) => return };
-    let rel_str = rel_path.to_string_lossy().replace("\\", "/");
-    let full_s3_key = format!("{}{}", target_prefix, rel_str);
-
-    if path.is_dir() {
-        let key = format!("{}/", full_s3_key);
-        if let Ok((client, bucket)) = get_s3_client().await {
-            let _ = client.put_object().bucket(bucket).key(&key).body(ByteStream::from_static(b"")).send().await;
-        }
-    } else if path.is_file() {
-        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "waiting", "message": "Waiting 60s for OS to release file lock..." }));
-        tokio::time::sleep(Duration::from_secs(60)).await;
-
-        let mut retries = 5;
-        let mut success = false;
-
-        while retries > 0 && !success {
-            match ByteStream::from_path(&path).await {
-                Ok(body) => {
-                    if let Ok((client, bucket)) = get_s3_client().await {
-                        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "uploading" }));
-                        match client.put_object().bucket(bucket).key(&full_s3_key).body(body).content_type("application/octet-stream").send().await {
-                            Ok(_) => {
-                                log(&format!("Local Sync complete: {}", full_s3_key));
-                                let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "success" }));
-                                success = true;
-                            }
-                            Err(e) => {
-                                log(&format!("Upload failed: {:?}", e));
-                                let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "error", "message": format!("Upload failed: {}", e) }));
-                            }
-                        }
-                    }
-                }
-                Err(_e) => {
-                    let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "locked", "message": format!("File locked. Retrying in 2 mins. ({} attempts left)", retries) }));
-                    retries -= 1;
-                    if retries > 0 {
-                        tokio::time::sleep(Duration::from_secs(120)).await;
-                    } else {
-                        let _ = app_handle.emit("sync-status", serde_json::json!({ "file": rel_str, "status": "error", "message": "Failed after 5 attempts. File permanently locked." }));
-                    }
-                }
-            }
-        }
-    }
 }
 
 async fn upload_local_file(app: tauri::AppHandle, local_file_path: String, s3_key: String) -> Result<(), String> {
@@ -392,6 +357,30 @@ async fn perform_initial_sync(app: tauri::AppHandle, local_path: String, target_
     Ok(())
 }
 
+// --- BATCH SYNC LOGIC ---
+
+#[tauri::command]
+async fn flush_pending_uploads(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let files_to_upload: Vec<(String, PathBuf)> = {
+        let mut guard = state.pending_uploads.lock().unwrap();
+        guard.drain().map(|(k, (p, _))| (k, p)).collect()
+    };
+
+    if files_to_upload.is_empty() {
+        return Ok(());
+    }
+
+    let count = files_to_upload.len();
+    let _ = app.emit("sync-status", serde_json::json!({ "status": "flushing", "message": format!("Syncing {} files to cloud...", count) }));
+
+    for (rel_key, path) in files_to_upload {
+        let _ = upload_local_file(app.clone(), path.to_string_lossy().to_string(), rel_key).await;
+    }
+
+    let _ = app.emit("sync-status", serde_json::json!({ "status": "success", "message": format!("Background sync complete. Uploaded {} files.", count) }));
+    Ok(())
+}
+
 // --- FILE PREVIEW & CACHE ---
 
 #[tauri::command]
@@ -429,7 +418,6 @@ struct CacheMeta {
     size: u64,
 }
 
-// Shared helper to ensure cache logic is consistent
 fn get_cache_paths(app: &tauri::AppHandle, s3_key: &str) -> (PathBuf, PathBuf) {
     let dir = cache_dir(app);
     let key_hash = cache_key(s3_key);
@@ -451,8 +439,6 @@ async fn cache_file_from_cloud(app: tauri::AppHandle, s3_key: String, last_modif
                     let bytes = std::fs::read(&cache_file).map_err(|e| e.to_string())?;
                     log(&format!("Cache HIT for {} (v: {})", s3_key, last_modified));
                     return Ok(general_purpose::STANDARD.encode(&bytes));
-                } else {
-                    log(&format!("Cache STALE for {} (cached: {}, cloud: {})", s3_key, meta.last_modified, last_modified));
                 }
             }
         }
@@ -475,14 +461,7 @@ async fn cache_file_from_cloud(app: tauri::AppHandle, s3_key: String, last_modif
 }
 
 #[tauri::command]
-async fn open_file_natively(
-    app: tauri::AppHandle,
-    s3_key: String,
-    local_root: Option<String>,
-    user_path: String,
-    last_modified: String,
-) -> Result<(), String> {
-    // 1. Try Local Disk
+async fn open_file_natively(app: tauri::AppHandle, s3_key: String, local_root: Option<String>, user_path: String, last_modified: String) -> Result<(), String> {
     if let Some(root) = local_root {
         let safe_user_path = sanitize_prefix(&user_path);
         let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
@@ -494,7 +473,6 @@ async fn open_file_natively(
         }
     }
 
-    // 2. Try Cache
     let (cache_file, meta_file) = get_cache_paths(&app, &s3_key);
     let now = Local::now().timestamp();
     
@@ -509,7 +487,6 @@ async fn open_file_natively(
         }
     }
 
-    // 3. Fallback to Cloud
     log(&format!("Downloading for native open: {}", s3_key));
     let (client, bucket) = get_s3_client().await?;
     let resp = client.get_object().bucket(bucket).key(&s3_key).send().await.map_err(format_s3_error)?;
@@ -533,7 +510,7 @@ fn evict_cache_if_needed(dir: &PathBuf, max_bytes: u64) -> std::io::Result<()> {
     if let Ok(rd) = std::fs::read_dir(dir) {
         for entry in rd.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") { continue; } // Skip meta files
+            if path.extension().and_then(|e| e.to_str()) == Some("json") { continue; }
             
             if let Ok(meta) = entry.metadata() {
                 let cached_at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
@@ -549,7 +526,7 @@ fn evict_cache_if_needed(dir: &PathBuf, max_bytes: u64) -> std::io::Result<()> {
     for (path, size, _) in entries {
         if total <= max_bytes { break; }
         let _ = std::fs::remove_file(&path);
-        let meta_path = path.with_extension("meta.json"); // This is a bit naive, but works for now
+        let meta_path = path.with_extension("meta.json");
         let _ = std::fs::remove_file(&meta_path);
         total = total.saturating_sub(size);
     }
@@ -765,12 +742,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
-        .manage(AppState { watchers: Mutex::new(HashMap::new()) })
+        .manage(AppState {
+            watchers: Mutex::new(HashMap::new()),
+            pending_uploads: Mutex::new(HashMap::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             list_files, list_local_files, create_folder, delete_object, get_share_url, read_local_file_as_base64,
             cache_file_from_cloud, open_file_natively, clear_file_cache, upload_file, download_file, get_all_sync_configs,
             save_sync_config, get_storage_usage, set_filelu_credentials, get_filelu_credentials_status,
-            clear_filelu_credentials, start_sync_for_user, stop_sync_for_user, send_it_alert, open_local_folder
+            clear_filelu_credentials, start_sync_for_user, stop_sync_for_user, send_it_alert, open_local_folder,
+            flush_pending_uploads
         ])
         .setup(|app| {
             log("UMS backend ready");
@@ -795,7 +776,41 @@ pub fn run() {
                 }).build(app)?;
 
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move { poll_it_alerts(handle).await; });
+            tauri::async_runtime::spawn(async move { 
+                poll_it_alerts(handle.clone()).await; 
+            });
+
+            // 1-Hour Background Flush Loop
+            let flush_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    let state = flush_handle.state::<AppState>();
+                    let mut to_flush = Vec::new();
+                    {
+                        let mut guard = state.pending_uploads.lock().unwrap();
+                        let now = Instant::now();
+                        let mut keys_to_remove = Vec::new();
+                        for (k, (path, time)) in guard.iter() {
+                            if now.duration_since(*time) >= Duration::from_secs(3600) {
+                                to_flush.push((k.clone(), path.clone()));
+                                keys_to_remove.push(k.clone());
+                            }
+                        }
+                        for k in keys_to_remove {
+                            guard.remove(&k);
+                        }
+                    }
+                    if !to_flush.is_empty() {
+                        let _ = flush_handle.emit("sync-status", serde_json::json!({ "status": "flushing", "message": format!("Syncing {} files...", to_flush.len()) }));
+                        for (k, path) in to_flush {
+                            let _ = upload_local_file(flush_handle.clone(), path.to_string_lossy().to_string(), k).await;
+                        }
+                        let _ = flush_handle.emit("sync-status", serde_json::json!({ "status": "success", "message": "Background sync complete." }));
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {

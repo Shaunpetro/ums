@@ -2,7 +2,7 @@
 
 [package]
 name = "ums-app"
-version = "0.1.6"
+version = "0.1.9"
 description = "Ubuveil Management System"
 authors = ["Petro Malamule"]
 edition = "2021"
