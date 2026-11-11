@@ -1,5 +1,5 @@
 // Path: ums-app/src/context/AuthContext.tsx
-// Purpose: Mock Authentication context for user selection and tenant mapping with sync lifecycle hooks.
+// Purpose: Mock Authentication context with extended roles and capabilities.
 
 import { createContext, useContext, useState, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -8,18 +8,47 @@ export interface User {
     id: string;
     name: string;
     role: string;
-    org: string;
+    org: string;       // The currently active company
+    orgs: string[];    // All companies the user belongs to
     dept: string;
     path: string;
+    email: string;
+    capabilities: string[];
 }
 
-// Hardcoded users for the mock Auth phase
 export const MOCK_USERS: User[] = [
-    { id: 'shadrack', name: 'Shadrack', role: 'CEO', org: 'VSC Mining', dept: 'Executive', path: 'VSC Mining/Executive/Shadrack' },
-    { id: 'hector', name: 'Hector', role: 'Project Management', org: 'VSC Mining', dept: 'Project Management', path: 'VSC Mining/Project Management/Hector' },
-    { id: 'edward', name: 'Edward', role: 'Technical Management', org: 'VSC Mining', dept: 'Technical Management', path: 'VSC Mining/Technical Management/Edward' },
-    { id: 'petro', name: 'Petro', role: 'DevOps', org: 'VSC Mining', dept: 'DevOps', path: 'VSC Mining/DevOps/Petro' },
-    { id: 'palesa', name: 'Palesa', role: 'Reception', org: 'VSC Mining', dept: 'Reception', path: 'VSC Mining/Reception/Palesa' },
+    { 
+        id: 'shadrack', name: 'Shadrack', role: 'CEO', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Executive', path: 'VSC Mining/Executive/Shadrack', 
+        email: 'shadrack@vscmining.co.za', capabilities: ['read:all', 'write:all', 'admin:profile', 'admin:finance'] 
+    },
+    { 
+        id: 'palesa', name: 'Palesa', role: 'PA to CEO', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Executive', path: 'VSC Mining/Executive/Palesa', 
+        email: 'info@vscmining.co.za', capabilities: ['read:executive', 'write:executive', 'read:finance', 'write:finance', 'read:tenders', 'write:tenders'] 
+    },
+    { 
+        id: 'hector', name: 'Hector', role: 'Project Manager', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Management', path: 'VSC Mining/Management/Hector', 
+        email: 'bouwerh@vscmining.co.za', capabilities: ['read:all', 'write:management', 'admin:profile'] 
+    },
+    { 
+        id: 'edward', name: 'Edward', role: 'Technical Manager', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Management', path: 'VSC Mining/Management/Edward', 
+        email: 'e.holden-smith@vscmining.co.za', capabilities: ['read:management', 'write:management', 'read:devops'] 
+    },
+    { 
+        id: 'marshall', name: 'Marshall', role: 'Finance Admin', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Finance', path: 'VSC Mining/Finance/Marshall', 
+        email: 'marshall.makina@vscmining.co.za', capabilities: ['read:finance', 'write:finance', 'read:management', 'write:management', 'read:executive', 'write:executive', 'admin:profile', 'admin:finance'] 
+    },
+    { 
+        id: 'angela', name: 'Angela', role: 'Accountant', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Finance', path: 'VSC Mining/Finance/Angela', 
+        email: 'a.leboa@vscmining.co.za', capabilities: ['read:finance', 'write:finance', 'admin:finance'] 
+    },
+    { 
+        id: 'thapelo', name: 'Thapelo', role: 'HR', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'HR', path: 'VSC Mining/HR/Thapelo', 
+        email: 'dikobe.t@vscmining.co.za', capabilities: ['read:hr', 'write:hr'] 
+    },
+    { 
+        id: 'petro', name: 'Petro', role: 'DevOps', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'DevOps', path: 'VSC Mining/DevOps/Petro', 
+        email: 'petro@vscmining.co.za', capabilities: ['read:all', 'write:all', 'admin:profile', 'admin:finance'] 
+    },
 ];
 
 interface AuthContextType {

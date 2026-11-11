@@ -1,9 +1,9 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with dynamic footer, tray-aware UI, and centralized FileLu connection state.
+// Purpose: Main layout with company switcher dropdown, dynamic footer, and tray-aware UI.
 
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
@@ -12,6 +12,8 @@ import { useToast } from '../../context/ToastContext';
 import SyncSetupModal from './SyncSetupModal';
 import FileLuSetupModal from './FileLuSetupModal';
 import HelpModal from './HelpModal';
+import CompanyProfile from '../Company/CompanyProfile';
+import AddCompanyModal from '../Company/AddCompanyModal';
 import './AppShell.css';
 
 const NAV_ITEMS = [
@@ -27,13 +29,23 @@ const NAV_ITEMS = [
 export default function AppShell() {
     const { user, logout } = useAuth();
     const { toast } = useToast();
+    const navigate = useNavigate();
+    const location = useLocation();
+    
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const savedTheme = localStorage.getItem('ums-theme');
         return savedTheme ? savedTheme === 'dark' : true;
     });
 
     const [isHelpOpen, setIsHelpOpen] = useState(false);
+    const [isCompanyOpen, setIsCompanyOpen] = useState(false);
+    const [isAddCompanyOpen, setIsAddCompanyOpen] = useState(false);
     const [isCredModalOpen, setIsCredModalOpen] = useState(false);
+    
+    // Dropdown State
+    const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
     const [appVersion, setAppVersion] = useState('');
     const [credChecked, setCredChecked] = useState(false);
     const [credsSet, setCredsSet] = useState(false);
@@ -50,7 +62,28 @@ export default function AppShell() {
     const [pendingCount, setPendingCount] = useState(0);
     const [isFlushing, setIsFlushing] = useState(false);
 
-    const location = useLocation();
+    // Click outside to close dropdown
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsCompanyDropdownOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Route persistence
+    useEffect(() => {
+        localStorage.setItem('ums-last-route', location.pathname);
+    }, [location.pathname]);
+
+    useEffect(() => {
+        const savedRoute = localStorage.getItem('ums-last-route');
+        if (savedRoute && savedRoute !== '/' && location.pathname === '/') {
+            navigate(savedRoute, { replace: true });
+        }
+    }, []);
 
     useEffect(() => {
         getVersion().then(setAppVersion);
@@ -172,7 +205,6 @@ export default function AppShell() {
         setIsFlushing(true);
         try {
             await invoke('flush_pending_uploads');
-            // The event listener will set isFlushing to false and fire the toast
         } catch (err) {
             toast(`Manual sync failed: ${err}`, 'error');
             setIsFlushing(false);
@@ -201,6 +233,7 @@ export default function AppShell() {
     const lastUpdated = new Date().toLocaleDateString();
     const finalConnectedState = credsSet && isConnected;
     const isFullySyncing = syncReady && finalConnectedState && !isFlushing;
+    const canEditCompany = user.capabilities.includes('admin:profile') || user.capabilities.includes('admin:finance');
 
     return (
         <div className="app-container">
@@ -209,6 +242,8 @@ export default function AppShell() {
             <div className="bg-orb bg-orb-3"></div>
 
             {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
+            {isCompanyOpen && <CompanyProfile onClose={() => setIsCompanyOpen(false)} />}
+            {isAddCompanyOpen && <AddCompanyModal onClose={() => setIsAddCompanyOpen(false)} />}
 
             {(!credsSet) && (
                 <FileLuSetupModal
@@ -328,8 +363,57 @@ export default function AppShell() {
                         <input type="text" placeholder={getSearchPlaceholder()} className="search-input" />
                     </div>
                     <div className="topbar-actions">
-                        <div className="company-brand">
-                            <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
+                        
+                        {/* COMPANY SWITCHER DROPDOWN */}
+                        <div style={{ position: 'relative' }} ref={dropdownRef}>
+                            <button 
+                                className="text-btn" 
+                                onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', background: isCompanyDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent', border: '1px solid var(--ubv-border)' }}
+                            >
+                                <Building2 size={16} color="var(--ubv-brand-gradient-start)" />
+                                <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
+                                <ChevronDown size={14} color="var(--ubv-text-muted)" />
+                            </button>
+
+                            {isCompanyDropdownOpen && (
+                                <div className="glass-panel" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', width: '240px', zIndex: 1000, padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'var(--ubv-bg-elevated)' }}>
+                                    
+                                    {/* Active Company */}
+                                    <div style={{ padding: '8px 12px', fontSize: '12px', fontWeight: 600, color: 'var(--ubv-text-muted)', borderBottom: '1px solid var(--ubv-border)', marginBottom: '4px' }}>
+                                        YOUR WORKSPACES
+                                    </div>
+                                    
+                                    {user.orgs.map(org => (
+                                        <button 
+                                            key={org}
+                                            className="text-btn" 
+                                            onClick={() => {
+                                                if (org !== user.org) toast('Multi-company switching requires Autentico (Coming Soon)', 'info');
+                                                setIsCompanyDropdownOpen(false);
+                                            }}
+                                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: '4px', background: org === user.org ? 'rgba(128,128,128,0.1)' : 'transparent', width: '100%' }}
+                                        >
+                                            <span style={{ fontSize: '13px', fontWeight: org === user.org ? 600 : 400 }}>{org}</span>
+                                            {org === user.org && <Check size={14} color="var(--ubv-success)" />}
+                                        </button>
+                                    ))}
+
+                                    <div style={{ height: '1px', background: 'var(--ubv-border)', margin: '4px 0' }} />
+
+                                    {/* Actions */}
+                                    <button className="text-btn" onClick={() => { setIsAddCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
+                                        <Plus size={14} /> Add Workspace
+                                    </button>
+
+                                    {canEditCompany && (
+                                        <button className="text-btn" onClick={() => { setIsCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
+                                            <Settings size={14} /> Company Settings
+                                        </button>
+                                    )}
+
+                                </div>
+                            )}
                         </div>
 
                         <button className="icon-btn" onClick={() => setIsHelpOpen(true)} title="Help & Support">

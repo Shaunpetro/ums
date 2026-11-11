@@ -366,3 +366,70 @@ Each entry records a locked decision. Locked decisions require Pre-Change Discus
 
 **Locked:** yes
 **Date:** 2026-11-05
+
+---
+
+## DEC-052: Persistent UI State
+
+**Decision:** User preferences for View Mode (Grid/List), Sort Mode (Name/Date), and last visited Route are saved to `localStorage`.
+**Reason:** Prevents user frustration from reconfiguring the view every time the app restarts.
+
+**Locked:** yes
+**Date:** 2026-11-06
+
+---
+
+## DEC-053: Public GitHub Repository
+
+**Decision:** The `shaunpetro/ums` repository is public.
+**Reason:** Private repos on GitHub Free are billed for CI minutes after 2,000 minutes/month, which caused workflow failures. Public repos get unlimited free minutes. No secrets are committed (`.env` and `docs/dev/` are gitignored).
+
+**Locked:** yes
+**Date:** 2026-11-06
+
+# Architecture Decision Log
+
+Path: docs/architecture/DECISIONS.md
+Last updated: 2026-11-11
+
+*(Previous DEC-001 to DEC-053 preserved in git history)*
+
+---
+
+## DEC-054: Company > Users Hierarchy
+
+**Decision:** The Company (Tenant) is the root container. Users exist within the Company. 
+**Reason:** Company-level compliance, branding, and financial settings dictate the user experience. Users cannot exist outside a company context.
+
+**Locked:** yes
+**Date:** 2026-11-11
+
+---
+
+## DEC-055: VSC Mining Role-Based Access Control (RBAC) Matrix
+
+**Decision:** 
+- **Shadrack (CEO):** Super Admin (RW all).
+- **Petro (DevOps):** Super Admin (RW all).
+- **Palesa (PA):** RW Executive, RW Finance (Invoicing), RW Tenders.
+- **Hector (PM):** Read (R) all departments, RW Management.
+- **Edward (Tech):** RW Management, R DevOps.
+- **Marshall (Finance):** RW Finance, RW Management, RW Executive (Assists CEO).
+- **Angela (Accountant):** RW Finance.
+- **Thapelo (HR):** RW HR.
+- **Company Profile Access:** Hector, Petro, Marshall can edit. All others can read.
+
+**Reason:** Reflects the operational reality of a small, high-trust family business while protecting sensitive HR/Finance data.
+
+**Locked:** yes
+**Date:** 2026-11-11
+
+---
+
+## DEC-056: Email Template & Sending Strategy
+
+**Decision:** Company email templates (HTML Header/Footer) are stored in the Company Profile JSON (`ums/orgs/{org-id}/company_profile.json`). Emails are composed in the frontend UI and dispatched via the Rust backend to Resend.
+**Reason:** Allows the company to maintain marketing-style branding without hardcoding HTML in the binary.
+
+**Locked:** yes
+**Date:** 2026-11-11

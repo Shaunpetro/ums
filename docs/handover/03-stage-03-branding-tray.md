@@ -2,7 +2,7 @@
 
 **Stage:** 03
 **Slug:** branding-tray-it-support
-**Date:** 2026-11-05
+**Date:** 2026-11-06
 **Author:** Petro Malamule (Petro@ATG)
 **Git branch:** `stage/02-installer-updates`
 **Rules version active:** 2.0
@@ -29,54 +29,52 @@
 
 ## 3. Where the Project Started
 
-At the end of Stage 02, the app successfully built, signed, and auto-updated via GitHub Releases. However, it used default Tauri icons, crashed if FileLu API limits were hit, lacked a system tray (closing the window killed the background watcher), and had no way for users to report issues to IT.
+At the end of Stage 02, the app successfully built, signed, and auto-updated via GitHub Releases. However, it used default Tauri icons, crashed if FileLu API limits were hit, lacked a system tray, and had no way for users to report issues to IT.
 
 ---
 
 ## 4. Where the Project Is Now
 
-The app is now a professional, branded desktop application. It features a system tray that keeps background sync alive (OneDrive-style), runs on boot, displays a personalized footer, and allows users to "Ping IT".
-
-Crucially, we implemented a **1-Hour Batch Sync Queue** to prevent API quota exhaustion. Files saved locally are queued as "Pending" and flushed to FileLu in batches every hour, on app quit, or via the "Sync Now" button. We also implemented a **Local-First File Cache and Viewer** that allows opening PDFs, images, and Word documents without consuming API quota if they are already on the PC.
+Stage 03 is complete. The app is fully branded, runs in the system tray, and features a robust 1-Hour Batch Sync Queue to prevent FileLu API quota exhaustion. Files can be previewed natively (images, PDFs, text) with a local metadata cache to prevent redundant downloads. The auto-updater pipeline is fully automated and confirmed working (jumping from `0.1.4` to `0.1.9`). The GitHub repository was made public to unlock unlimited CI runner minutes, resolving billing locks.
 
 ---
 
 ## 5. What Was Done This Stage
 
-- `S03-T01`: Generated official App Icons (`.ico`, `.icns`, `.png`) from `assets/source/app/icon.svg`.
-- `S03-T02`: Updated `tauri.conf.json` to show "Ubuveil Management System" in Windows Settings, with "ATG (Pty) Ltd" as Publisher.
-- `S03-T03`: Implemented System Tray in `lib.rs`. Closing the window hides it to the tray.
-- `S03-T04`: Added IT Support Skeleton. Users submit pings to S3, and Petro receives a native toast.
-- `S03-T05`: Replaced native `alert()` with `ToastContext.tsx`.
-- `S03-T06`: Built a full-screen `FileViewerModal.tsx`.
-- `S03-T07`: Implemented 1-Hour Batch Sync Queue. Files saved locally trigger a `pending` state, and a background Rust task flushes them every 3600 seconds. Added manual "Sync Now" button in the footer.
-- `S03-T08`: Implemented `open_file_natively` and a Local Cache (`%APPDATA%/file_cache`). Opening a Word doc checks local disk -> cache -> cloud.
-- `S03-T09`: Added UI controls for Grid/List view, persistent Sort Toggle (A-Z, Z-A, Newest, Oldest), and Filter by name.
-- `S03-T10`: Fixed `.github/workflows/release.yml` to correctly push `latest.json` to the `updates` branch using `git push -f`.
+- `S03-T01`: Generated official App Icons.
+- `S03-T02`: Configured Windows Settings display name ("Ubuveil Management System") and Publisher ("ATG (Pty) Ltd") while retaining `ums-app` as the binary name.
+- `S03-T03`: Implemented System Tray in `lib.rs`. Closing the window hides it.
+- `S03-T04`: Added IT Support Skeleton with native Windows toast notifications for alerts.
+- `S03-T05`: Built `ToastContext.tsx` for glassmorphism notifications.
+- `S03-T06`: Built `FileViewerModal.tsx` with full-screen PDF/Image/Text rendering.
+- `S03-T07`: Implemented 1-Hour Batch Sync Queue. Files trigger a `pending` state and flush every 3600s via background Rust task. Added manual "Sync Now" button.
+- `S03-T08`: Implemented `open_file_natively` and Local Cache (`%APPDATA%/file_cache`).
+- `S03-T09`: Added persistent Grid/List views, persistent Sort toggle, Name Filter, and Route Persistence.
+- `S03-T10`: Fixed `.github/workflows/release.yml` to reliably push `latest.json` to the `updates` branch.
 
 ---
 
 ## 6. Known Bugs Not Fixed
 
-- **Bidirectional Sync:** The app currently only uploads local changes. Changes made by other users to the S3 bucket do not automatically download to the local sync folder.
-- **API Latency:** Because files are queued for 1 hour, colleagues will not see a newly saved file in the cloud until the flush occurs. The user can manually click "Sync Now" to expedite this.
+- **Bidirectional Sync:** The app only uploads local changes. Cloud changes do not automatically download to local folders. (Deferred to Phase 2).
+- **Ghost Folders:** Renaming/moving folders locally does not delete the old folder in S3. This is intentional to avoid API quota destruction and data loss during sync.
+- **Batch Delay:** Colleagues will not see newly saved files in the cloud until the 1-hour flush occurs (or manual "Sync Now" click).
 
 ---
 
 ## 7. Current Workings
 
 - **Open branches:** `stage/02-installer-updates`.
-- **Uncommitted changes:** All code is saved, ready to build and tag.
-- **Pending decisions:** The Autentico local server setup is paused until the UI/UX and FileLu sync are completely battle-tested.
+- **Uncommitted changes:** None. `v0.1.9` is tagged and released.
+- **Pending decisions:** Autentico Local Server (LAN) vs. Cloud.
 
 ---
 
 ## 8. Next Steps
 
-1. `S03-N01`: Run local smoke test to verify the batch queue, sort toggle, and file viewer.
-2. `S03-N02`: Tag `app-v0.1.9` and push to GitHub.
-3. `S03-N03`: Verify CI builds and populates the `updates` branch.
-4. `S03-N04`: Deploy to the 3 primary PCs.
+1. `S03-N01`: Deploy `v0.1.9` to the 3 primary PCs (auto-updates from `0.1.4`).
+2. `S03-N02`: Begin Autentico local server setup (Windows PC or Raspberry Pi).
+3. `S03-N03`: Move on to building the Tasks pipeline (Kanban/List views).
 
 ---
 
@@ -86,6 +84,8 @@ Crucially, we implemented a **1-Hour Batch Sync Queue** to prevent API quota exh
 - **DEC-049:** File Viewer & Metadata Cache.
 - **DEC-050:** FileLu API Rate Limit Mitigation (1-hour batch queue).
 - **DEC-051:** Local-First Native Opening.
+- **DEC-052:** Persistent UI State (localStorage for sort, view, last route).
+- **DEC-053:** Public GitHub Repo for Unlimited CI Minutes.
 
 ---
 
