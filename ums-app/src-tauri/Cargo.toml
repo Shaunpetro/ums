@@ -2,7 +2,7 @@
 
 [package]
 name = "ums-app"
-version = "0.2.0"
+version = "0.2.2"
 description = "Ubuveil Management System"
 authors = ["Petro Malamule"]
 edition = "2021"
@@ -15,13 +15,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dotenvy = "0.15"
@@ -33,3 +34,4 @@ notify = "6.1"
 walkdir = "2.5"
 keyring = { version = "3", features = ["windows-native"] }
 base64 = "0.22"
+log = "0.4"

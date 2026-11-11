@@ -1,11 +1,13 @@
 // Path: ums-app/src/components/Layout/HelpModal.tsx
-// Purpose: Help, IT Support, and About modal.
+// Purpose: Help, IT Support, About, and Debug tools.
 
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
+import { appLogDir } from '@tauri-apps/api/path';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { check } from '@tauri-apps/plugin-updater';
-import { X, RefreshCw, MessageCircle } from 'lucide-react';
+import { X, RefreshCw, MessageCircle, Bug, FolderOpen } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 
@@ -47,6 +49,23 @@ export default function HelpModal({ onClose }: Props) {
         }
     };
 
+    const handleOpenLogs = async () => {
+        try {
+            const logDir = await appLogDir();
+            await openPath(logDir);
+        } catch (err) {
+            toast(`Could not open logs folder: ${err}`, 'error');
+        }
+    };
+
+    const handleToggleDevTools = async () => {
+        try {
+            await invoke('open_devtools');
+        } catch (err) {
+            toast(`Could not open DevTools: ${err}`, 'error');
+        }
+    };
+
     const handlePingIT = async () => {
         if (!issue.trim()) {
             toast('Please describe the issue first.', 'error');
@@ -76,7 +95,7 @@ export default function HelpModal({ onClose }: Props) {
 
     return (
         <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.9)', backdropFilter: 'blur(10px)' }}>
-            <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', minHeight: '400px', display: 'flex', flexDirection: 'column', border: '1px solid var(--ubv-brand-gradient-start)' }}>
+            <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', minHeight: '450px', display: 'flex', flexDirection: 'column', border: '1px solid var(--ubv-brand-gradient-start)' }}>
                 <div className="modal-header">
                     <h2 className="modal-title">Help & Support</h2>
                     <button className="modal-close" onClick={onClose}><X size={20} /></button>
@@ -103,6 +122,22 @@ export default function HelpModal({ onClose }: Props) {
                                 <button className="outline-btn" onClick={handleCheckUpdates} disabled={checking} style={{ padding: '6px 12px', fontSize: '12px' }}>
                                     <RefreshCw size={12} className={checking ? 'spin' : ''} style={{ marginRight: '6px' }} />
                                     Check
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Debug Tools */}
+                        <div className="glass-panel" style={{ padding: '16px', background: 'rgba(128,128,128,0.05)', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <Bug size={16} color="var(--ubv-brand-gradient-start)" />
+                                <span style={{ fontSize: '14px', fontWeight: 500 }}>Debug Tools</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button className="outline-btn" onClick={handleOpenLogs} style={{ flex: 1, padding: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <FolderOpen size={14} /> Open Logs
+                                </button>
+                                <button className="outline-btn" onClick={handleToggleDevTools} style={{ flex: 1, padding: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                    <Bug size={14} /> DevTools (F12)
                                 </button>
                             </div>
                         </div>

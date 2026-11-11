@@ -1,5 +1,5 @@
 // Path: ums-app/src/context/AuthContext.tsx
-// Purpose: Mock Authentication context with extended roles and capabilities.
+// Purpose: Mock Authentication context with schema migration for Stage 04 user shape.
 
 import { createContext, useContext, useState, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -8,8 +8,8 @@ export interface User {
     id: string;
     name: string;
     role: string;
-    org: string;       // The currently active company
-    orgs: string[];    // All companies the user belongs to
+    org: string;
+    orgs: string[];
     dept: string;
     path: string;
     email: string;
@@ -62,7 +62,21 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(() => {
         const saved = localStorage.getItem('ums-current-user');
-        return saved ? JSON.parse(saved) : null;
+        if (!saved) return null;
+        try {
+            const parsed = JSON.parse(saved);
+            // Stage 04 schema migration: the pre-0.2.0 user shape did not have
+            // capabilities or orgs. Force a fresh login so the user picks up
+            // the new MOCK_USERS object with full RBAC data.
+            if (!parsed || !Array.isArray(parsed.capabilities) || !Array.isArray(parsed.orgs)) {
+                localStorage.removeItem('ums-current-user');
+                return null;
+            }
+            return parsed;
+        } catch {
+            localStorage.removeItem('ums-current-user');
+            return null;
+        }
     });
 
     const login = (selectedUser: User) => {

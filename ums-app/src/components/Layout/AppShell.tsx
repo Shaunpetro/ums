@@ -1,8 +1,8 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with company switcher dropdown, dynamic footer, and tray-aware UI.
+// Purpose: Main layout with theme-aware logo, compliance alerts, company switcher, and tray-aware UI.
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check, AlertTriangle } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
@@ -26,12 +26,13 @@ const NAV_ITEMS = [
     { path: '/tasks', label: 'Tasks', icon: <CheckSquare size={18} /> },
 ];
 
+interface ComplianceAlert { name: string; status: string; days_until_expiry: number; }
+
 export default function AppShell() {
     const { user, logout } = useAuth();
     const { toast } = useToast();
     const navigate = useNavigate();
     const location = useLocation();
-    
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const savedTheme = localStorage.getItem('ums-theme');
         return savedTheme ? savedTheme === 'dark' : true;
@@ -41,8 +42,6 @@ export default function AppShell() {
     const [isCompanyOpen, setIsCompanyOpen] = useState(false);
     const [isAddCompanyOpen, setIsAddCompanyOpen] = useState(false);
     const [isCredModalOpen, setIsCredModalOpen] = useState(false);
-    
-    // Dropdown State
     const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -52,17 +51,13 @@ export default function AppShell() {
     const [syncChecked, setSyncChecked] = useState(false);
     const [syncReady, setSyncReady] = useState(false);
     const [syncConfig, setSyncConfig] = useState<any>(null);
-    
-    // Centralized Connection State
     const [storageUsed, setStorageUsed] = useState<number>(0);
     const [isConnected, setIsConnected] = useState(true);
     const [apiError, setApiError] = useState<string | null>(null);
-
-    // Pending Queue State
     const [pendingCount, setPendingCount] = useState(0);
     const [isFlushing, setIsFlushing] = useState(false);
+    const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([]);
 
-    // Click outside to close dropdown
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -73,7 +68,6 @@ export default function AppShell() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Route persistence
     useEffect(() => {
         localStorage.setItem('ums-last-route', location.pathname);
     }, [location.pathname]);
@@ -99,36 +93,22 @@ export default function AppShell() {
         }
     }, [isDarkMode]);
 
-    // Listen for Sync Status updates
     useEffect(() => {
         const unlisten = listen<any>('sync-status', (event) => {
-            const { status, message } = event.payload;
-            if (status === 'pending') {
-                setPendingCount(prev => prev + 1);
-            } else if (status === 'flushing') {
-                setIsFlushing(true);
-            } else if (status === 'success' && message) {
-                setPendingCount(0);
-                setIsFlushing(false);
-                toast(message, 'success');
-            }
+            const { status } = event.payload;
+            if (status === 'pending') setPendingCount(prev => prev + 1);
+            else if (status === 'flushing') setIsFlushing(true);
+            else if (status === 'success') { setPendingCount(0); setIsFlushing(false); }
         });
         return () => { unlisten.then(f => f()); };
-    }, [toast]);
+    }, []);
 
     useEffect(() => {
         if (!user) return;
         setCredChecked(false);
         invoke<{ all_set: boolean }>('get_filelu_credentials_status')
-            .then(status => {
-                setCredsSet(status.all_set);
-                setCredChecked(true);
-            })
-            .catch(err => {
-                console.error('Failed to check FileLu credentials:', err);
-                setCredsSet(false);
-                setCredChecked(true);
-            });
+            .then(status => { setCredsSet(status.all_set); setCredChecked(true); })
+            .catch(() => { setCredsSet(false); setCredChecked(true); });
     }, [user]);
 
     useEffect(() => {
@@ -140,75 +120,66 @@ export default function AppShell() {
                 if (cfg) {
                     setSyncConfig(cfg);
                     invoke<boolean>('start_sync_for_user', { userPath: user.path })
-                        .then(started => {
-                            setSyncReady(started);
-                            setSyncChecked(true);
-                        })
-                        .catch(err => {
-                            console.error('Failed to start sync:', err);
-                            setSyncReady(false);
-                            setSyncChecked(true);
-                        });
+                        .then(started => { setSyncReady(started); setSyncChecked(true); })
+                        .catch(() => { setSyncReady(false); setSyncChecked(true); });
                 } else {
                     setSyncConfig(null);
                     setSyncReady(false);
                     setSyncChecked(true);
                 }
             })
-            .catch(err => {
-                console.error('Failed to load sync configs:', err);
-                setSyncReady(false);
-                setSyncChecked(true);
-            });
+            .catch(() => { setSyncReady(false); setSyncChecked(true); });
     }, [user, credsSet]);
 
-    // Heartbeat Connection Check (Runs every 1 hour)
     useEffect(() => {
         if (!credsSet) return;
-        
         const checkConnection = () => {
             invoke<number>('get_storage_usage')
-                .then((bytes) => {
-                    setStorageUsed(bytes);
-                    setIsConnected(true);
-                    setApiError(null); 
-                })
+                .then((bytes) => { setStorageUsed(bytes); setIsConnected(true); setApiError(null); })
                 .catch((err) => {
-                    console.error("Storage usage check failed:", err);
-                    let errorMsg = "Connection failed.";
-                    if (err.includes("AccessDenied") || err.includes("limit exceeded")) {
-                        errorMsg = "FileLu API limit exceeded.";
-                    } else if (err.includes("dispatch failure") || err.includes("network")) {
-                        errorMsg = "Network error. Check your internet.";
-                    }
+                    let msg = "Connection failed.";
+                    if (err.includes("AccessDenied") || err.includes("limit exceeded")) msg = "FileLu API limit exceeded.";
+                    else if (err.includes("dispatch failure") || err.includes("network")) msg = "Network error.";
                     setIsConnected(false);
-                    setApiError(errorMsg);
+                    setApiError(msg);
                 });
         };
-
         checkConnection();
-        const interval = setInterval(checkConnection, 3600000); 
+        const interval = setInterval(checkConnection, 3600000);
         return () => clearInterval(interval);
     }, [credsSet]);
 
+    // Compliance alerts: check once per session on mount. Show a single toast.
+    useEffect(() => {
+        if (!user) return;
+        const sessionKey = `ums-compliance-checked-${user.org}-${new Date().toDateString()}`;
+        if (sessionStorage.getItem(sessionKey)) return;
+        sessionStorage.setItem(sessionKey, '1');
+        const orgId = user.org.replace(/ /g, '_');
+        invoke<ComplianceAlert[]>('check_compliance_alerts', { orgId })
+            .then(alerts => {
+                if (alerts && alerts.length > 0) {
+                    setComplianceAlerts(alerts);
+                    const expired = alerts.filter(a => a.status === 'expired').length;
+                    const expiring = alerts.filter(a => a.status === 'expiring').length;
+                    const parts: string[] = [];
+                    if (expired) parts.push(`${expired} expired`);
+                    if (expiring) parts.push(`${expiring} expiring soon`);
+                    toast(`Compliance alert: ${parts.join(', ')}. Open Company Profile to review.`, 'error');
+                }
+            })
+            .catch(() => { /* silent */ });
+    }, [user, toast]);
+
     const reportCloudStatus = (success: boolean, errorMsg?: string) => {
-        if (success) {
-            setIsConnected(true);
-            setApiError(null);
-        } else {
-            setIsConnected(false);
-            if (errorMsg) setApiError(errorMsg);
-        }
+        if (success) { setIsConnected(true); setApiError(null); }
+        else { setIsConnected(false); if (errorMsg) setApiError(errorMsg); }
     };
 
     const handleManualSync = async () => {
         setIsFlushing(true);
-        try {
-            await invoke('flush_pending_uploads');
-        } catch (err) {
-            toast(`Manual sync failed: ${err}`, 'error');
-            setIsFlushing(false);
-        }
+        try { await invoke('flush_pending_uploads'); }
+        catch (err) { console.error(err); setIsFlushing(false); }
     };
 
     const getSearchPlaceholder = () => {
@@ -224,16 +195,25 @@ export default function AppShell() {
     };
 
     if (!user) return null;
-
     if (!credChecked) {
         return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-bg-primary)' }}>Loading UMS...</div>;
     }
+
+    const capabilities = user.capabilities ?? [];
+    const orgs = user.orgs ?? [user.org];
+    const orgLabel = (user.org ?? 'UNKNOWN').toUpperCase();
+    const userName = user.name ?? 'Unknown';
+    const userRole = user.role ?? '';
+    const userInitial = userName.charAt(0);
 
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
     const lastUpdated = new Date().toLocaleDateString();
     const finalConnectedState = credsSet && isConnected;
     const isFullySyncing = syncReady && finalConnectedState && !isFlushing;
-    const canEditCompany = user.capabilities.includes('admin:profile') || user.capabilities.includes('admin:finance');
+    const canEditCompany = capabilities.includes('admin:profile') || capabilities.includes('admin:finance');
+    const alertCount = complianceAlerts.length;
+
+    const logoSrc = isDarkMode ? '/logo-horizontal-white.svg' : '/logo-horizontal-color.svg';
 
     return (
         <div className="app-container">
@@ -245,78 +225,50 @@ export default function AppShell() {
             {isCompanyOpen && <CompanyProfile onClose={() => setIsCompanyOpen(false)} />}
             {isAddCompanyOpen && <AddCompanyModal onClose={() => setIsAddCompanyOpen(false)} />}
 
-            {(!credsSet) && (
-                <FileLuSetupModal
-                    onComplete={() => {
-                        setCredsSet(true);
-                        setIsConnected(true);
-                        setApiError(null);
-                    }}
-                    onLogout={logout}
-                />
-            )}
-
+            {(!credsSet) && <FileLuSetupModal onComplete={() => { setCredsSet(true); setIsConnected(true); setApiError(null); }} onLogout={logout} />}
             {credsSet && isCredModalOpen && (
                 <FileLuSetupModal
-                    onComplete={() => {
-                        setIsConnected(true);
-                        setApiError(null);
-                        setIsCredModalOpen(false);
-                    }}
+                    onComplete={() => { setIsConnected(true); setApiError(null); setIsCredModalOpen(false); }}
                     onClose={() => setIsCredModalOpen(false)}
                     apiError={apiError}
                 />
             )}
-
             {credsSet && syncChecked && !syncReady && !isCredModalOpen && (
-                <SyncSetupModal
-                    userPath={user.path}
-                    onComplete={(path, prefix) => {
-                        setSyncConfig({ local_path: path, sync_target_prefix: prefix });
-                        setSyncReady(true);
-                    }}
-                />
+                <SyncSetupModal userPath={user.path} onComplete={(path, prefix) => { setSyncConfig({ local_path: path, sync_target_prefix: prefix }); setSyncReady(true); }} />
             )}
 
             <aside className="sidebar glass-panel">
                 <div className="brand">
-                    <img 
-                        src="/logo-horizontal-white.svg" 
-                        alt="Ubuveil" 
-                        style={{ height: '32px', marginRight: '12px' }} 
+                    <img
+                        src={logoSrc}
+                        alt="Ubuveil"
+                        style={{ height: '32px', marginRight: '12px' }}
                         onError={(e) => {
                             e.currentTarget.style.display = 'none';
                             const parent = e.currentTarget.parentElement;
                             if (parent) {
-                                const text = document.createElement('span');
-                                text.innerText = 'UBUVEIL';
-                                text.className = 'brand-title';
-                                parent.appendChild(text);
+                                const span = document.createElement('span');
+                                span.innerText = 'UBUVEIL';
+                                span.className = 'brand-title';
+                                parent.appendChild(span);
                             }
                         }}
                     />
                 </div>
 
-                <button className="new-btn">
-                    + New Upload
-                </button>
+                <button className="new-btn">+ New Upload</button>
 
                 <nav className="nav-menu">
-                    {NAV_ITEMS.map((item) => (
-                        <NavLink
-                            key={item.path}
-                            to={item.path}
-                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        >
-                            {item.icon}
-                            {item.label}
+                    {NAV_ITEMS.map(item => (
+                        <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            {item.icon}{item.label}
                         </NavLink>
                     ))}
                 </nav>
 
                 <div className="sidebar-bottom">
-                    <button 
-                        className="text-btn" 
+                    <button
+                        className="text-btn"
                         onClick={() => setIsCredModalOpen(true)}
                         style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', paddingLeft: '12px', width: '100%', justifyContent: 'flex-start', background: 'transparent', border: 'none', cursor: 'pointer' }}
                         title="Click to reconnect or change keys"
@@ -335,23 +287,19 @@ export default function AppShell() {
                             <span className="marker" style={{ fontSize: '11px' }}>Storage</span>
                             <span className="marker" style={{ fontSize: '11px' }}>{formatSize(storageUsed)} / 100 GB</span>
                         </div>
-                        <div className="quota-bar">
-                            <div className="quota-fill" style={{ width: `${quotaPercentage}%` }}></div>
-                        </div>
+                        <div className="quota-bar"><div className="quota-fill" style={{ width: `${quotaPercentage}%` }}></div></div>
                     </div>
 
                     <div className="sidebar-footer">
                         <div className="user-profile">
                             <div className="avatar-circle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-brand-gradient)' }}>
-                                <span style={{ color: 'white', fontWeight: 600 }}>{user.name.charAt(0)}</span>
+                                <span style={{ color: 'white', fontWeight: 600 }}>{userInitial}</span>
                             </div>
                             <div className="user-info" style={{ flex: 1 }}>
-                                <span className="user-name">{user.name}</span>
-                                <span className="user-role">{user.role}</span>
+                                <span className="user-name">{userName}</span>
+                                <span className="user-role">{userRole}</span>
                             </div>
-                            <button className="icon-btn" onClick={() => { void logout(); }} title="Log out">
-                                <LogOut size={16} />
-                            </button>
+                            <button className="icon-btn" onClick={() => { void logout(); }} title="Log out"><LogOut size={16} /></button>
                         </div>
                     </div>
                 </div>
@@ -363,33 +311,42 @@ export default function AppShell() {
                         <input type="text" placeholder={getSearchPlaceholder()} className="search-input" />
                     </div>
                     <div className="topbar-actions">
-                        
-                        {/* COMPANY SWITCHER DROPDOWN */}
                         <div style={{ position: 'relative' }} ref={dropdownRef}>
-                            <button 
-                                className="text-btn" 
+                            <button
+                                className="text-btn"
                                 onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', background: isCompanyDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent', border: '1px solid var(--ubv-border)' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', background: isCompanyDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent', border: '1px solid var(--ubv-border)', position: 'relative' }}
                             >
                                 <Building2 size={16} color="var(--ubv-brand-gradient-start)" />
-                                <span className="marker" style={{ fontWeight: 700 }}>[{user.org.toUpperCase()}]</span>
+                                <span className="marker" style={{ fontWeight: 700 }}>[{orgLabel}]</span>
+                                {alertCount > 0 && (
+                                    <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--ubv-danger)', color: 'white', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {alertCount}
+                                    </span>
+                                )}
                                 <ChevronDown size={14} color="var(--ubv-text-muted)" />
                             </button>
 
                             {isCompanyDropdownOpen && (
-                                <div className="glass-panel" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', width: '240px', zIndex: 1000, padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'var(--ubv-bg-elevated)' }}>
-                                    
-                                    {/* Active Company */}
+                                <div className="glass-panel" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '8px', width: '260px', zIndex: 1000, padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px', background: 'var(--ubv-bg-elevated)' }}>
+                                    {alertCount > 0 && (
+                                        <div style={{ padding: '8px 12px', marginBottom: '4px', background: 'rgba(235,111,101,0.12)', border: '1px solid var(--ubv-danger)', borderRadius: '6px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                            <AlertTriangle size={14} color="var(--ubv-danger)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                                            <div style={{ fontSize: '11px', color: 'var(--ubv-danger)' }}>
+                                                {alertCount} compliance {alertCount === 1 ? 'document needs' : 'documents need'} attention.
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div style={{ padding: '8px 12px', fontSize: '12px', fontWeight: 600, color: 'var(--ubv-text-muted)', borderBottom: '1px solid var(--ubv-border)', marginBottom: '4px' }}>
                                         YOUR WORKSPACES
                                     </div>
-                                    
-                                    {user.orgs.map(org => (
-                                        <button 
+                                    {orgs.map((org: string) => (
+                                        <button
                                             key={org}
-                                            className="text-btn" 
+                                            className="text-btn"
                                             onClick={() => {
-                                                if (org !== user.org) toast('Multi-company switching requires Autentico (Coming Soon)', 'info');
+                                                if (org !== user.org) console.info('Multi-company switching requires Autentico.');
                                                 setIsCompanyDropdownOpen(false);
                                             }}
                                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: '4px', background: org === user.org ? 'rgba(128,128,128,0.1)' : 'transparent', width: '100%' }}
@@ -398,27 +355,20 @@ export default function AppShell() {
                                             {org === user.org && <Check size={14} color="var(--ubv-success)" />}
                                         </button>
                                     ))}
-
                                     <div style={{ height: '1px', background: 'var(--ubv-border)', margin: '4px 0' }} />
-
-                                    {/* Actions */}
                                     <button className="text-btn" onClick={() => { setIsAddCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
                                         <Plus size={14} /> Add Workspace
                                     </button>
-
                                     {canEditCompany && (
                                         <button className="text-btn" onClick={() => { setIsCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
                                             <Settings size={14} /> Company Settings
                                         </button>
                                     )}
-
                                 </div>
                             )}
                         </div>
 
-                        <button className="icon-btn" onClick={() => setIsHelpOpen(true)} title="Help & Support">
-                            <HelpCircle size={20} />
-                        </button>
+                        <button className="icon-btn" onClick={() => setIsHelpOpen(true)} title="Help & Support"><HelpCircle size={20} /></button>
                         <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
                             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                         </button>
@@ -430,13 +380,10 @@ export default function AppShell() {
                 </div>
 
                 <footer style={{ padding: '12px 32px', borderTop: '1px solid var(--ubv-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--ubv-text-muted)', background: 'rgba(0,0,0,0.2)' }}>
-                    <div>
-                        Ubuveil MS (c) ARR
-                    </div>
+                    <div>Ubuveil MS (c) ARR</div>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <button className="text-btn" onClick={handleManualSync} disabled={isFlushing || pendingCount === 0} style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', color: pendingCount > 0 ? 'var(--ubv-warning)' : 'var(--ubv-text-muted)' }}>
-                            <RefreshCw size={10} className={isFlushing ? 'spin' : ''} />
-                            Sync Now
+                            <RefreshCw size={10} className={isFlushing ? 'spin' : ''} /> Sync Now
                         </button>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Activity size={12} color={isFullySyncing ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />

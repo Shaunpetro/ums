@@ -1,5 +1,5 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend with 1-hour background sync queue, tray menu, keyring credentials, and caching.
+// Purpose: Tauri backend with 1-hour batch sync queue, tray menu, keyring credentials, caching, file logging, and DevTools command.
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -131,6 +131,14 @@ async fn get_s3_client() -> Result<(Client, String), String> {
         .build();
 
     Ok((Client::from_conf(config), bucket))
+}
+
+// --- DEVTOOLS COMMAND ---
+
+#[tauri::command]
+fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.open_devtools();
+    Ok(())
 }
 
 // --- FILELU CREDENTIALS ---
@@ -733,9 +741,125 @@ async fn download_file(app: tauri::AppHandle, key: String) -> Result<String, Str
     Ok(dest_path.to_string_lossy().to_string())
 }
 
+// --- COMPANY PROFILE & COMPLIANCE ---
+
+#[tauri::command]
+async fn get_company_profile(org_id: String) -> Result<String, String> {
+    let (client, bucket) = get_s3_client().await?;
+    let key = format!("{}/company_profile.json", org_id);
+    match client.get_object().bucket(&bucket).key(&key).send().await {
+        Ok(resp) => {
+            let bytes = resp.body.collect().await.map_err(|e| e.to_string())?.into_bytes();
+            String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())
+        }
+        Err(_) => Ok("{}".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn save_company_profile(org_id: String, profile_json: String) -> Result<(), String> {
+    let (client, bucket) = get_s3_client().await?;
+    let key = format!("{}/company_profile.json", org_id);
+    let body = ByteStream::from(profile_json.into_bytes());
+    client.put_object().bucket(bucket).key(&key).body(body)
+        .content_type("application/json").send().await
+        .map_err(format_s3_error)?;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ComplianceAlert {
+    name: String,
+    status: String,
+    days_until_expiry: i64,
+}
+
+#[tauri::command]
+async fn check_compliance_alerts(org_id: String) -> Result<Vec<ComplianceAlert>, String> {
+    let (client, bucket) = get_s3_client().await?;
+    let key = format!("{}/company_profile.json", org_id);
+    let resp = match client.get_object().bucket(&bucket).key(&key).send().await {
+        Ok(r) => r,
+        Err(_) => return Ok(vec![]),
+    };
+    let bytes = resp.body.collect().await.map_err(|e| e.to_string())?.into_bytes();
+    let json: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return Ok(vec![]),
+    };
+    let families = json.get("compliance_docs")
+        .and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let mut alerts = Vec::new();
+    let today = Local::now().date_naive();
+
+    for family in families {
+        let name = family.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+
+        // Pick the current version: highest issued_date, tiebreak by uploaded_at.
+        // Mirrors getCurrentVersion() in utils/compliance.ts.
+        let versions = family.get("versions").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let mut best: Option<(String, String, String)> = None; // (issued_date, expiry_date, uploaded_at)
+        for v in versions {
+            let issued = v.get("issued_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let expiry = v.get("expiry_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let uploaded = v.get("uploaded_at").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            match &best {
+                None => best = Some((issued, expiry, uploaded)),
+                Some((bi, _, bu)) => {
+                    let cur = chrono::NaiveDate::parse_from_str(&issued, "%Y-%m-%d").ok();
+                    let prev = chrono::NaiveDate::parse_from_str(bi, "%Y-%m-%d").ok();
+                    let take = match (cur, prev) {
+                        (Some(c), Some(p)) => c > p || (c == p && uploaded.as_str() > bu.as_str()),
+                        (Some(_), None) => true,
+                        _ => false,
+                    };
+                    if take {
+                        best = Some((issued, expiry, uploaded));
+                    }
+                }
+            }
+        }
+
+        let expiry_str = match best {
+            Some((_, e, _)) => e,
+            None => continue,
+        };
+        if expiry_str.is_empty() { continue; }
+
+        if let Ok(expiry) = chrono::NaiveDate::parse_from_str(&expiry_str, "%Y-%m-%d") {
+            let days = (expiry - today).num_days();
+            if days < 0 {
+                alerts.push(ComplianceAlert { name, status: "expired".to_string(), days_until_expiry: days });
+            } else if days <= 30 {
+                alerts.push(ComplianceAlert { name, status: "expiring".to_string(), days_until_expiry: days });
+            }
+        }
+    }
+    Ok(alerts)
+}
+
+#[tauri::command]
+async fn upload_compliance_doc(org_id: String, doc_id: String, local_path: String, filename: String) -> Result<String, String> {
+    let (client, bucket) = get_s3_client().await?;
+    let key = format!("{}/shared/compliance/{}-{}", org_id, doc_id, filename);
+    let body = ByteStream::from_path(&local_path).await.map_err(|e| e.to_string())?;
+    client.put_object().bucket(bucket).key(&key).body(body)
+        .content_type("application/octet-stream").send().await
+        .map_err(format_s3_error)?;
+    Ok(key)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new()
+            .targets([
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("ums".into()) }),
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+            ])
+            .build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -751,7 +875,8 @@ pub fn run() {
             cache_file_from_cloud, open_file_natively, clear_file_cache, upload_file, download_file, get_all_sync_configs,
             save_sync_config, get_storage_usage, set_filelu_credentials, get_filelu_credentials_status,
             clear_filelu_credentials, start_sync_for_user, stop_sync_for_user, send_it_alert, open_local_folder,
-            flush_pending_uploads
+            flush_pending_uploads, open_devtools,
+            get_company_profile, save_company_profile, check_compliance_alerts, upload_compliance_doc
         ])
         .setup(|app| {
             log("UMS backend ready");
