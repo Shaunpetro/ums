@@ -1,7 +1,8 @@
 // Path: ums-app/src/context/AuthContext.tsx
-// Purpose: Mock Authentication context with schema migration for Stage 04 user shape.
+// Purpose: Autentico-backed authentication context with offline-tolerant boot
+//          (RS256 verify + local expiry + clock guard in Rust via get_cached_user).
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface User {
@@ -16,72 +17,76 @@ export interface User {
     capabilities: string[];
 }
 
-export const MOCK_USERS: User[] = [
-    { 
-        id: 'shadrack', name: 'Shadrack', role: 'CEO', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Executive', path: 'VSC Mining/Executive/Shadrack', 
-        email: 'shadrack@vscmining.co.za', capabilities: ['read:all', 'write:all', 'admin:profile', 'admin:finance'] 
-    },
-    { 
-        id: 'palesa', name: 'Palesa', role: 'PA to CEO', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Executive', path: 'VSC Mining/Executive/Palesa', 
-        email: 'info@vscmining.co.za', capabilities: ['read:executive', 'write:executive', 'read:finance', 'write:finance', 'read:tenders', 'write:tenders'] 
-    },
-    { 
-        id: 'hector', name: 'Hector', role: 'Project Manager', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Management', path: 'VSC Mining/Management/Hector', 
-        email: 'bouwerh@vscmining.co.za', capabilities: ['read:all', 'write:management', 'admin:profile'] 
-    },
-    { 
-        id: 'edward', name: 'Edward', role: 'Technical Manager', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Management', path: 'VSC Mining/Management/Edward', 
-        email: 'e.holden-smith@vscmining.co.za', capabilities: ['read:management', 'write:management', 'read:devops'] 
-    },
-    { 
-        id: 'marshall', name: 'Marshall', role: 'Finance Admin', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Finance', path: 'VSC Mining/Finance/Marshall', 
-        email: 'marshall.makina@vscmining.co.za', capabilities: ['read:finance', 'write:finance', 'read:management', 'write:management', 'read:executive', 'write:executive', 'admin:profile', 'admin:finance'] 
-    },
-    { 
-        id: 'angela', name: 'Angela', role: 'Accountant', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'Finance', path: 'VSC Mining/Finance/Angela', 
-        email: 'a.leboa@vscmining.co.za', capabilities: ['read:finance', 'write:finance', 'admin:finance'] 
-    },
-    { 
-        id: 'thapelo', name: 'Thapelo', role: 'HR', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'HR', path: 'VSC Mining/HR/Thapelo', 
-        email: 'dikobe.t@vscmining.co.za', capabilities: ['read:hr', 'write:hr'] 
-    },
-    { 
-        id: 'petro', name: 'Petro', role: 'DevOps', org: 'VSC Mining', orgs: ['VSC Mining'], dept: 'DevOps', path: 'VSC Mining/DevOps/Petro', 
-        email: 'petro@vscmining.co.za', capabilities: ['read:all', 'write:all', 'admin:profile', 'admin:finance'] 
-    },
-];
+type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
 
 interface AuthContextType {
     user: User | null;
-    login: (user: User) => void;
+    authState: AuthState;
+    login: (username: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(() => {
-        const saved = localStorage.getItem('ums-current-user');
-        if (!saved) return null;
-        try {
-            const parsed = JSON.parse(saved);
-            // Stage 04 schema migration: the pre-0.2.0 user shape did not have
-            // capabilities or orgs. Force a fresh login so the user picks up
-            // the new MOCK_USERS object with full RBAC data.
-            if (!parsed || !Array.isArray(parsed.capabilities) || !Array.isArray(parsed.orgs)) {
-                localStorage.removeItem('ums-current-user');
-                return null;
-            }
-            return parsed;
-        } catch {
-            localStorage.removeItem('ums-current-user');
-            return null;
-        }
-    });
+    const [user, setUser] = useState<User | null>(null);
+    const [authState, setAuthState] = useState<AuthState>('loading');
 
-    const login = (selectedUser: User) => {
-        setUser(selectedUser);
-        localStorage.setItem('ums-current-user', JSON.stringify(selectedUser));
+    useEffect(() => {
+        let cancelled = false;
+
+        // Clean up pre-05a localStorage. JWT in keyring is now the source of truth.
+        localStorage.removeItem('ums-current-user');
+
+        async function boot() {
+            // Step 1: local-only checks in Rust (RS256 signature, exp, clock guard).
+            const cached = await invoke<User | null>('get_cached_user').catch(() => null);
+            if (!cancelled && cached) {
+                setUser(cached);
+                setAuthState('authenticated');
+                // Best-effort background validate. Never blocks, never logs out per DEC-058.
+                invoke('autentico_validate').catch(() => { /* offline: user keeps working */ });
+                return;
+            }
+
+            // Step 2: try refresh. Handles clock drift / slight expiry edge cases
+            // when the LAN Autentico is reachable but the local token is stale.
+            try {
+                const refreshed = await invoke<{ token: string; user: User }>('autentico_refresh');
+                if (!cancelled && refreshed?.user) {
+                    setUser(refreshed.user);
+                    setAuthState('authenticated');
+                    return;
+                }
+            } catch {
+                // Refresh failed (expired, revoked, or offline). Fall through.
+            }
+
+            if (!cancelled) setAuthState('unauthenticated');
+        }
+
+        boot();
+        return () => { cancelled = true; };
+    }, []);
+
+    // Periodic validate every 6 hours while authenticated. Failure is silent (DEC-058).
+    // 05b will act on suspended/revoked status. 05a just proves the loop works.
+    useEffect(() => {
+        if (authState !== 'authenticated') return;
+        const interval = setInterval(async () => {
+            try {
+                await invoke('autentico_validate');
+            } catch {
+                // Offline. Silent. Do not log out per DEC-058.
+            }
+        }, 6 * 60 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [authState]);
+
+    const login = async (username: string, password: string) => {
+        const r = await invoke<{ token: string; user: User }>('autentico_login', { username, password });
+        setUser(r.user);
+        setAuthState('authenticated');
     };
 
     const logout = async () => {
@@ -92,12 +97,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 console.error('Failed to stop sync on logout:', err);
             }
         }
+        await invoke('autentico_logout').catch(() => {});
         setUser(null);
-        localStorage.removeItem('ums-current-user');
+        setAuthState('unauthenticated');
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout }}>
+        <AuthContext.Provider value={{ user, authState, login, logout }}>
             {children}
         </AuthContext.Provider>
     );

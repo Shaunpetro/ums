@@ -1,11 +1,41 @@
 // Path: ums-app/src/components/Layout/LoginScreen.tsx
-// Purpose: Mock Auth profile selection screen.
+// Purpose: Username/password authentication against Autentico.
 
-import { useAuth, MOCK_USERS } from '../../context/AuthContext';
-import { Shield, User as UserIcon } from 'lucide-react';
+import { useState, FormEvent } from 'react';
+import { Shield, User as UserIcon, Lock } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen() {
     const { login } = useAuth();
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async (e: FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        const u = username.trim();
+        if (!u) {
+            setError('Username is required.');
+            return;
+        }
+        if (!password) {
+            setError('Password is required.');
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            await login(u, password);
+            // On success, authState flips to 'authenticated' and this screen unmounts.
+        } catch (err) {
+            const msg = typeof err === 'string' ? err : 'Login failed. Please try again.';
+            setError(msg);
+            setSubmitting(false);
+        }
+    };
 
     return (
         <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
@@ -13,49 +43,82 @@ export default function LoginScreen() {
             <div className="bg-orb bg-orb-2"></div>
             <div className="bg-orb bg-orb-3"></div>
 
-            <div className="glass-panel" style={{ padding: '48px', width: '100%', maxWidth: '800px', zIndex: 10 }}>
-                <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <div className="glass-panel" style={{ padding: '48px', width: '100%', maxWidth: '420px', zIndex: 10 }}>
+                <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '64px', height: '64px', borderRadius: '16px', background: 'var(--ubv-brand-gradient)', marginBottom: '16px' }}>
                         <Shield size={32} color="white" />
                     </div>
-                    <h1 style={{ fontSize: '32px', fontWeight: 700, marginBottom: '8px' }}>Welcome to Ubuveil</h1>
-                    <p className="marker">Select your profile to continue to the VSC Mining workspace.</p>
+                    <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '8px' }}>Welcome to Ubuveil</h1>
+                    <p className="marker">Sign in to your VSC Mining workspace.</p>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                    {MOCK_USERS.map((user) => (
-                        <button
-                            key={user.id}
-                            onClick={() => login(user)}
-                            className="glass-panel"
-                            style={{
-                                padding: '24px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                cursor: 'pointer',
-                                border: '1px solid var(--ubv-glass-border)',
-                                background: 'var(--ubv-glass-bg)',
-                                transition: 'all 0.2s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'translateY(-4px)';
-                                e.currentTarget.style.borderColor = 'var(--ubv-brand-gradient-start)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'translateY(0)';
-                                e.currentTarget.style.borderColor = 'var(--ubv-glass-border)';
-                            }}
-                        >
-                            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(128,128,128,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                                <UserIcon size={32} color="var(--ubv-text-muted)" />
-                            </div>
-                            <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px', color: 'var(--ubv-text-main)' }}>{user.name}</h3>
-                            <span className="badge warning" style={{ marginBottom: '8px' }}>{user.role}</span>
-                            <span className="marker" style={{ fontSize: '11px' }}>{user.dept}</span>
-                        </button>
-                    ))}
-                </div>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group" style={{ marginBottom: '16px' }}>
+                        <label>Username</label>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--ubv-text-muted)', pointerEvents: 'none' }}>
+                                <UserIcon size={16} />
+                            </span>
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                placeholder="Your username"
+                                autoFocus
+                                autoComplete="username"
+                                disabled={submitting}
+                                style={{ paddingLeft: '40px' }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '24px' }}>
+                        <label>Password</label>
+                        <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--ubv-text-muted)', pointerEvents: 'none' }}>
+                                <Lock size={16} />
+                            </span>
+                            <input
+                                type="password"
+                                className="form-input"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                placeholder="Your password"
+                                autoComplete="current-password"
+                                disabled={submitting}
+                                style={{ paddingLeft: '40px' }}
+                            />
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div style={{
+                            background: 'rgba(235, 111, 101, 0.12)',
+                            border: '1px solid var(--ubv-danger)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            marginBottom: '16px',
+                            color: 'var(--ubv-danger)',
+                            fontSize: '13px'
+                        }}>
+                            {error}
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        className="action-btn"
+                        disabled={submitting}
+                        style={{ width: '100%', padding: '12px', fontSize: '14px' }}
+                    >
+                        {submitting ? 'Signing in...' : 'Sign In'}
+                    </button>
+                </form>
+
+                <p className="marker" style={{ textAlign: 'center', fontSize: '11px', marginTop: '24px' }}>
+                    Authentication is handled by Autentico on the local network.
+                </p>
             </div>
         </div>
     );

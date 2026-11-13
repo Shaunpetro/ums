@@ -91,7 +91,7 @@ export default function FileLuSetupModal({ onComplete, onLogout, onClose, apiErr
     };
 
     return (
-        <div className="modal-overlay open" style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.95)', backdropFilter: 'blur(10px)' }}>
+        <div className="modal-overlay open" style={{ zIndex: 99999 }}>
             <div className="modal-content glass-panel" style={{ maxWidth: '500px', border: '1px solid var(--ubv-brand-gradient-start)' }}>
                 <div className="modal-header" style={{ marginBottom: '16px' }}>
                     <h2 className="modal-title">Connect Storage</h2>

@@ -94,7 +94,7 @@ export default function HelpModal({ onClose }: Props) {
     const whatsappLink = "https://wa.me/27813877744?text=Hi%20Petro,%20I%20need%20help%20with%20Ubuveil%20MS.";
 
     return (
-        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.9)', backdropFilter: 'blur(10px)' }}>
+        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999 }}>
             <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', minHeight: '450px', display: 'flex', flexDirection: 'column', border: '1px solid var(--ubv-brand-gradient-start)' }}>
                 <div className="modal-header">
                     <h2 className="modal-title">Help & Support</h2>
@@ -116,7 +116,7 @@ export default function HelpModal({ onClose }: Props) {
                             <p className="marker">Version {appVersion} | Tauri {tauriVersion}</p>
                         </div>
 
-                        <div className="glass-panel" style={{ padding: '16px', background: 'rgba(128,128,128,0.05)', marginBottom: '16px' }}>
+                        <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px' }}>
                             <div className="flex-between">
                                 <span style={{ fontSize: '14px', fontWeight: 500 }}>Application Updates</span>
                                 <button className="outline-btn" onClick={handleCheckUpdates} disabled={checking} style={{ padding: '6px 12px', fontSize: '12px' }}>
@@ -127,7 +127,7 @@ export default function HelpModal({ onClose }: Props) {
                         </div>
 
                         {/* Debug Tools */}
-                        <div className="glass-panel" style={{ padding: '16px', background: 'rgba(128,128,128,0.05)', marginBottom: '16px' }}>
+                        <div className="glass-panel" style={{ padding: '16px', marginBottom: '16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                                 <Bug size={16} color="var(--ubv-brand-gradient-start)" />
                                 <span style={{ fontSize: '14px', fontWeight: 500 }}>Debug Tools</span>

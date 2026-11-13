@@ -1,53 +1,147 @@
 # UMS Local Authentication & Offboarding Strategy
 
 Path: docs/architecture/LOCAL-AUTH-STRATEGY.md
-Status: Planned (Phase 4)
-Supersedes: DEC-002 (Autentico Cloud VPS)
+Status: Active (Stage 05)
+Supersedes: v2 (which had a startup-blocking validate), v1 (Planned Phase 4)
+References: AUTHENTICO-API.md (contract), DEC-002 (superseded), DEC-041, DEC-048, DEC-057, DEC-058, AUTH-DESIGN.md
+Rules: 15, 20
+Last updated: 2026-11-13
 
 ---
 
-## 1. Architecture Overview
+## 1. Overview
 
-To avoid cloud hosting costs and Oracle capacity issues, the Autentico Identity Provider (IdP) will be hosted **on-premise** on a local LAN machine (Windows PC or Raspberry Pi).
+Autentico is a LAN-hosted Go identity provider on a Windows PC. It exposes an HTTP API. The contract is defined in `docs/architecture/AUTHENTICO-API.md`.
 
-- **Server OS:** Windows 10/11 or Linux (ARM)
-- **Runtime:** Autentico Go binary running as a background service (NSSM on Windows).
-- **Network:** LAN-only (e.g., `http://192.168.1.50:8080`). Not exposed to the public internet.
-- **Database:** SQLite (embedded, no separate DB server).
-- **Client Auth:** Tauri app points to the LAN IP. 
+- **Server OS:** Windows 10/11
+- **Runtime:** Go binary, single executable, no external dependencies
+- **Network:** LAN-only, `http://<lan-ip>:8080`. Not exposed to public internet.
+- **Database:** SQLite, embedded, WAL mode
+- **Client:** UMS Tauri app, on the same LAN
+- **Keypair:** RS256 signing keys at `%PROGRAMDATA%\Autentico\keys\`, permissions locked to the service account
+- **Repo:** `C:\ums-autentico` (separate from UMS). Own handover chain. Own release cadence.
+- **Host:** the current Windows PC (Petro's machine). Uptime matters for new logins only, not for existing sessions.
 
-## 2. Token Strategy (The "30-Day Magic Trick")
+## 2. Token Strategy
 
-Because the server is not always-on (due to power outages) and not exposed to the internet, users cannot authenticate remotely.
+- **Algorithm:** RS256 JWT
+- **TTL:** 30 days from issue
+- **Sliding renewal:** refresh issues new JWT with fresh `iat`/`exp`. Old JWT remains valid until natural expiry.
+- **Claim schema:** see `AUTHENTICO-API.md` section 5
+- **Storage:** OS keyring only (DEC-041). Never `localStorage`, never files.
+- **Local signature verification:** in 05a. RS256 public key pinned at UMS build time (embedded in binary as `autentico-public.pem`). Every local JWT check validates the signature before trusting the claims. Rejects forged tokens (loophole L2).
+- **Re-authentication:** after JWT `exp` (30 days from last issue), user must log in again, which requires Autentico reachable.
 
-- **Access Tokens:** RS256 JWT with a **30-day TTL**.
-- **Offline Work:** Once a user logs in while on the office LAN, the app caches the JWT in the OS keyring.
-- **Graceful Degradation:** For the next 30 days, the app can verify the JWT locally. Users can open the app, browse files, and sync with FileLu **even if the local auth server is turned off or the user is working from home**.
-- **Re-authentication:** After 30 days, the app requires a login, which means the user must be on the office LAN.
+## 3. Boot Sequence (offline-tolerant)
 
-## 3. Staged Revocation Protocol (Offboarding)
+The core of the offline-trust strategy (DEC-058):
 
-When an admin suspends a user in the Autentico dashboard, the server updates the revocation list (`revoked.json`). The desktop app checks this list upon startup.
+1. Read JWT from keyring. If absent, user must log in (needs Autentico).
+2. **Verify RS256 signature** against pinned public key. Invalid = fail login.
+3. **Local expiry check:** `exp > now`. Expired = user must log in (needs Autentico).
+4. **Clock-tamper guard:** if `now_local - last_successful_validate_at > 30 days`, user must log in (needs Autentico). Mitigates L3 partially.
+5. All checks pass: user is authenticated. Load `user_metadata`, compute capabilities.
+6. **Best-effort background validate** fires. Success updates `sync_mode` and `last_successful_validate_at`. Failure (Autentico unreachable) is silent - user keeps working.
 
-If the app detects a revoked/suspended token, it follows a 3-phase shutdown to prevent data theft while preserving their last work:
+The critical consequence: existing users work offline for up to 30 days. Only new logins and expired-token users need Autentico.
 
-### Phase 1: Active (Normal)
-- **Direction:** Bidirectional (Local <-> Cloud).
-- **Behavior:** User can upload, download, and modify files.
+## 4. Client Check Cadence
 
-### Phase 2: Suspended (Grace Period - 48 Hours)
-- **Direction:** One-way (Local -> Cloud only).
-- **Behavior:** The sync engine ignores `download` events from the cloud. If the user creates or modifies a local file, it is uploaded to FileLu. This prevents the user from downloading new company files, but saves their last 48 hours of work. 
-- **Trigger:** App startup + LAN connection where the server says `status: suspended`.
+- **On boot:** local checks as above. Background validate best-effort.
+- **While running:** `validate` every 6 hours.
+- **On network reconnect:** `validate` immediately.
+- **Manual:** user can trigger via Help > "Check session status".
 
-### Phase 3: Revoked (Frozen - Day 3+)
-- **Direction:** None.
-- **Behavior:** The sync engine stops entirely. Local files are frozen. The app displays a "Device Revoked" warning and requires the IT admin to wipe the cache (DEC-010) or manually unlock the device.
-- **Trigger:** 48 hours after the suspended status is detected, OR immediate detection if the token is expired.
+Failed validate while running is silent. Suspension or revocation status, when returned, applies the protocol in section 5.
 
-## 4. Implementation Checklist (For Phase 4)
-- [ ] Replace `MOCK_USERS` in `AuthContext.tsx` with real Autentico API calls.
-- [ ] Update Rust `lib.rs` watcher to read a local `sync_mode.json` flag (`active` | `upload_only` | `disabled`).
-- [ ] Modify `handle_watcher_event` in Rust to skip downloads if `sync_mode == upload_only`.
-- [ ] Add the `check_revocation` command to the Tauri backend.
-- [ ] Configure a local Caddy proxy for HTTPS if Tauri strict CSP blocks HTTP requests to the LAN IP.
+## 5. Offboarding (Staged Revocation)
+
+Driven by `users.status` column in Autentico's SQLite DB.
+
+### Phase 1: Active
+- Bidirectional sync.
+
+### Phase 2: Suspended (48-hour grace from `suspended_at`)
+
+- **Server:** admin calls `POST /api/v1/admin/users/:id/suspend`. `users.status='suspended'`, `suspended_at=now()`. `validate` returns `{"status":"suspended","suspended_at":"..."}`.
+- **Client:** `sync_mode` in Rust process memory = `upload_only`. Downloads blocked at watcher level.
+- **48-hour clock:** measured from `suspended_at` server timestamp, not client detection. If a user does not launch UMS until 3 days after suspension, `validate` returns `revoked` immediately.
+- **Quarantine strategy (loophole mitigation):** queued uploads are sorted by file mtime vs `suspended_at`:
+  - `mtime < suspended_at` -> normal path `{org}/users/{user}/...`
+  - `mtime >= suspended_at` -> quarantine path `{org}/suspended_uploads/{user}/{YYYY-MM-DD}/{filename}`
+  - Downloads during blind window logged to `{org}/audit/downloads/` with timestamps.
+- **Admin action required:** review quarantine path, promote legitimate work or delete. Not automatic.
+
+### Phase 3: Revoked (frozen)
+
+- **Server:** admin calls `POST /api/v1/admin/users/:id/revoke`, OR 48h elapsed since `suspended_at` (Autentico auto-transitions). `validate` returns `{"status":"revoked","revoked_at":"..."}`. `refresh` returns 403.
+- **Client:** sync engine stops entirely. Watcher killed. S3 uploads blocked. Banner "Device Revoked - Contact Admin".
+- **Recovery:** only via `POST /api/v1/admin/users/:id/reactivate`.
+
+### Data structures
+- `users.status` column: `active` / `suspended` / `revoked`
+- `users.suspended_at`, `users.revoked_at`
+- `revocation_log` table (append-only audit)
+- `revoked_tokens` table (`jti` blacklist, TTL-evicted)
+- No `revoked.json` file (v1 had this; superseded)
+
+## 6. Implementation Checklist
+
+### 05p - Autentico (C:\ums-autentico)
+- [x] API contract (`AUTHENTICO-API.md`)
+- [ ] Go binary, single executable
+- [ ] `/login`, `/validate`, `/refresh`, `/logout`, `/public-key` endpoints
+- [ ] `seed` CLI subcommand (creates 8 users)
+- [ ] `user suspend|revoke|reactivate` CLI subcommands
+- [ ] `hash-password` CLI subcommand
+- [ ] Argon2id password hashing
+- [ ] RS256 keypair generation and rotation
+- [ ] SQLite schema and migrations
+- [ ] Windows service wrapper (NSSM or `sc create`)
+- [ ] Nightly SQLite backup
+- [ ] README with install instructions
+
+### 05a - Auth Foundation (UMS)
+- [ ] `rbac.rs` role->capability mapping (DEC-057)
+- [ ] `lib.rs` commands: `autentico_login`, `autentico_logout`, `autentico_validate`, `autentico_refresh`, `get_cached_jwt`, `is_jwt_expired`, `decode_user_from_jwt`
+- [ ] RS256 signature verification in `lib.rs` using `jsonwebtoken` crate + pinned `autentico-public.pem`
+- [ ] `AuthContext.tsx` replaced (offline-tolerant boot)
+- [ ] `LoginScreen.tsx` replaced (username/password form)
+- [ ] Keyring for JWT
+- [ ] `App.tsx` handles `authState === 'loading'`
+- [ ] `AppShell.tsx` `read:profile` gating, devops hidden
+- [ ] `CompanyProfile.tsx` banking view gated by `admin:finance`
+- [ ] Version 0.2.3
+
+### 05b - Revocation (UMS)
+- [ ] `check_revocation` and 6-hour loop
+- [ ] `sync_mode` in Rust memory (not file)
+- [ ] Quarantine path sorting by mtime
+- [ ] Banner UI
+- [ ] Version 0.2.4
+
+### 05c - Hardening (backlog)
+- [ ] Key rotation support (rebuild with new public key)
+- [ ] Monotonic clock verification
+- [ ] Remote cache wipe
+- [ ] Password change flow
+- [ ] Password reset flow
+
+## 7. Known Accepted Risks (DEC-058)
+
+1. **L1 sync_mode tampering** - mitigated by Rust memory state
+2. **L3 clock manipulation** - partial mitigation via `last_successful_validate_at`; full requires server enforcement
+3. **L5 shared S3 credentials** - operational mitigation by revoking FileLu on termination
+4. **L6 suspension learned via validate only** - by design; 6h cadence limits to 6h worst-case detection delay
+5. **L8 mtime forgeable** - quarantine is cooperative
+
+Additional accepted risk:
+- **HTTP on LAN** - passwords cross LAN plaintext. Trusted LAN. HTTPS is future.
+- **Autentico single point of failure** for new logins. Mitigated by 30-day offline grace.
+- **Cache wipe is manual** - physical access. Remote wipe is future work.
+
+## 8. Change Log
+
+- **v1 (2026-11):** Initial strategy. Gaps: no API contract, ambiguous revocation timing, undefined revoked.json, startup-only check, no password spec, no keypair spec.
+- **v2 (2026-11-13):** Points to AUTHENTICO-API.md. Fixes revocation timing, cadence, replaces revoked.json. Adds password and keypair specs. Documents accepted risks.
+- **v3 (2026-11-13):** Offline-tolerant boot sequence (RS256 verify + local exp + server_time guard). 6-hour cadence (was 30 min). Quarantine strategy for post-suspension uploads. Adds L1-L9 loophole mitigations per DEC-058.

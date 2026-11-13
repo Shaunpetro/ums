@@ -1,5 +1,6 @@
 // Path: ums-app/src/components/Company/CompanyProfile.tsx
 // Purpose: S3-backed company profile with versioned compliance workflow.
+//          Banking section gated by admin:finance (DEC-058 L9).
 
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -78,10 +79,10 @@ export default function CompanyProfile({ onClose }: Props) {
     };
 
     const canEdit = user?.capabilities?.includes('admin:profile') ?? false;
-    const canEditBanking = canEdit || (user?.capabilities?.includes('admin:finance') ?? false);
+    const canEditBanking = user?.capabilities?.includes('admin:finance') ?? false;
 
     return (
-        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.95)' }}>
+        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999 }}>
             <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '1100px', width: '95vw', height: '85vh', display: 'flex', flexDirection: 'column' }}>
                 <div className="modal-header" style={{ paddingBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -156,7 +157,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
     );
 }
 
-// ============ DETAILS TAB (unchanged) ============
+// ============ DETAILS TAB ============
 
 function DetailsTab({ profile, canEdit, canEditBanking, updateIdentity, updateBanking, orgId, setProfile, toast }: any) {
     const [uploadingLight, setUploadingLight] = useState(false);
@@ -168,10 +169,8 @@ function DetailsTab({ profile, canEdit, canEditBanking, updateIdentity, updateBa
             if (!selected || typeof selected !== 'string') return;
             if (variant === 'light') setUploadingLight(true); else setUploadingDark(true);
             const filename = selected.split(/[\\/]/).pop() || 'logo';
-            const ext = filename.split('.').pop() || 'png';
-            const key = `${orgId}/branding/logo-${variant}.${ext}`;
-            await invoke('upload_compliance_doc', { orgId, docId: `logo-${variant}`, localPath: selected, filename });
-            setProfile((p: any) => ({ ...p, branding: { ...p.branding, [variant === 'light' ? 'logo_light_url' : 'logo_dark_url']: key } }));
+            const uploadedKey = await invoke<string>('upload_compliance_doc', { orgId, docId: `logo-${variant}`, localPath: selected, filename });
+            setProfile((p: any) => ({ ...p, branding: { ...p.branding, [variant === 'light' ? 'logo_light_url' : 'logo_dark_url']: uploadedKey } }));
             toast(`${variant} logo uploaded.`, 'success');
         } catch (err) {
             toast(`Logo upload failed: ${err}`, 'error');
@@ -198,7 +197,7 @@ function DetailsTab({ profile, canEdit, canEditBanking, updateIdentity, updateBa
                 </div>
             </Section>
             <Section title="Branding">
-                <p className="marker" style={{ fontSize: '12px', marginBottom: '16px' }}>Light and dark variants are used in the app chrome and in outgoing emails.</p>
+                <p className="marker" style={{ fontSize: '12px', marginBottom: '16px' }}>Light and dark variants are used in the topbar workspace button and in outgoing emails.</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                     <div>
                         <span className="marker" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Light Mode Logo</span>
@@ -216,31 +215,33 @@ function DetailsTab({ profile, canEdit, canEditBanking, updateIdentity, updateBa
                     </div>
                 </div>
             </Section>
-            <Section title="Banking Details">
-                <p className="marker" style={{ fontSize: '12px', marginBottom: '16px' }}>Used in invoices and outgoing emails. Only finance-capable users can edit this section.</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <Field label="Account Holder" value={profile.banking.account_holder} onChange={v => updateBanking('account_holder', v)} disabled={!canEditBanking} />
-                    <Field label="Bank Name" value={profile.banking.bank_name} onChange={v => updateBanking('bank_name', v)} disabled={!canEditBanking} />
-                    <Field label="Account Number" value={profile.banking.account_number} onChange={v => updateBanking('account_number', v)} disabled={!canEditBanking} />
-                    <div className="form-group">
-                        <label>Account Type</label>
-                        <select className="form-input" value={profile.banking.account_type} onChange={e => updateBanking('account_type', e.target.value)} disabled={!canEditBanking}>
-                            <option value="Cheque">Cheque / Current</option>
-                            <option value="Savings">Savings</option>
-                            <option value="Business">Business</option>
-                            <option value="Transmission">Transmission</option>
-                        </select>
+            {canEditBanking && (
+                <Section title="Banking Details">
+                    <p className="marker" style={{ fontSize: '12px', marginBottom: '16px' }}>Used in invoices and outgoing emails. Only finance-capable users can view or edit this section.</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                        <Field label="Account Holder" value={profile.banking.account_holder} onChange={v => updateBanking('account_holder', v)} disabled={!canEditBanking} />
+                        <Field label="Bank Name" value={profile.banking.bank_name} onChange={v => updateBanking('bank_name', v)} disabled={!canEditBanking} />
+                        <Field label="Account Number" value={profile.banking.account_number} onChange={v => updateBanking('account_number', v)} disabled={!canEditBanking} />
+                        <div className="form-group">
+                            <label>Account Type</label>
+                            <select className="form-input" value={profile.banking.account_type} onChange={e => updateBanking('account_type', e.target.value)} disabled={!canEditBanking}>
+                                <option value="Cheque">Cheque / Current</option>
+                                <option value="Savings">Savings</option>
+                                <option value="Business">Business</option>
+                                <option value="Transmission">Transmission</option>
+                            </select>
+                        </div>
+                        <Field label="Branch Code" value={profile.banking.branch_code} onChange={v => updateBanking('branch_code', v)} disabled={!canEditBanking} />
+                        <Field label="SWIFT Code" value={profile.banking.swift_code} onChange={v => updateBanking('swift_code', v)} disabled={!canEditBanking} />
+                        <Field label="Currency" value={profile.banking.currency} onChange={v => updateBanking('currency', v)} disabled={!canEditBanking} />
                     </div>
-                    <Field label="Branch Code" value={profile.banking.branch_code} onChange={v => updateBanking('branch_code', v)} disabled={!canEditBanking} />
-                    <Field label="SWIFT Code" value={profile.banking.swift_code} onChange={v => updateBanking('swift_code', v)} disabled={!canEditBanking} />
-                    <Field label="Currency" value={profile.banking.currency} onChange={v => updateBanking('currency', v)} disabled={!canEditBanking} />
-                </div>
-            </Section>
+                </Section>
+            )}
         </div>
     );
 }
 
-// ============ COMPLIANCE TAB (versioned families) ============
+// ============ COMPLIANCE TAB ============
 
 function ComplianceTab({ families, canEdit, onChange, orgId, toast }: { families: ComplianceFamily[]; canEdit: boolean; onChange: (f: ComplianceFamily[]) => void; orgId: string; toast: any }) {
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -308,7 +309,7 @@ function ComplianceTab({ families, canEdit, onChange, orgId, toast }: { families
                         const isExpanded = expandedId === family.id;
 
                         return (
-                            <div key={family.id} className="glass-panel" style={{ background: 'rgba(128,128,128,0.05)' }}>
+                            <div key={family.id} className="glass-panel">
                                 <div
                                     onClick={() => setExpandedId(isExpanded ? null : family.id)}
                                     style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
@@ -319,7 +320,7 @@ function ComplianceTab({ families, canEdit, onChange, orgId, toast }: { families
                                             <div style={{ fontSize: '14px', fontWeight: 500 }}>{family.name}</div>
                                             <div className="marker" style={{ fontSize: '11px' }}>
                                                 {current ? `Current: issued ${current.issued_date}, expires ${current.expiry_date}` : 'No versions'}
-                                                {family.versions.length > 1 && ` - ${family.versions.length} versions`}
+                                                {family.versions.length > 1 && ` • ${family.versions.length} versions`}
                                             </div>
                                         </div>
                                     </div>
@@ -342,7 +343,7 @@ function ComplianceTab({ families, canEdit, onChange, orgId, toast }: { families
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             {[...family.versions]
                                                 .sort((a, b) => new Date(b.issued_date).getTime() - new Date(a.issued_date).getTime())
-                                                .map(v => {
+                                                .map((v) => {
                                                     const isCurrent = v.id === current?.id;
                                                     return (
                                                         <div key={v.id} className="glass-panel" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isCurrent ? 'rgba(43,182,115,0.08)' : 'rgba(0,0,0,0.15)', border: isCurrent ? '1px solid var(--ubv-success)' : '1px solid var(--ubv-border)' }}>
@@ -355,7 +356,7 @@ function ComplianceTab({ families, canEdit, onChange, orgId, toast }: { families
                                                                     </div>
                                                                     <div className="marker" style={{ fontSize: '11px' }}>
                                                                         Uploaded {new Date(v.uploaded_at).toLocaleDateString()}
-                                                                        {v.notes && ` - ${v.notes}`}
+                                                                        {v.notes && ` • ${v.notes}`}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -550,7 +551,7 @@ function VersionForm({ orgId, family, onSave, onCancel, toast }: any) {
     };
 
     return (
-        <div className="glass-panel" style={{ padding: '16px', background: 'rgba(0,0,0,0.2)' }}>
+        <div className="glass-panel" style={{ padding: '16px' }}>
             <p className="marker" style={{ fontSize: '11px', marginBottom: '12px' }}>
                 Add the renewed certificate for <strong>{family.name}</strong>. The previous version stays in the history above.
             </p>
@@ -583,7 +584,7 @@ function VersionForm({ orgId, family, onSave, onCancel, toast }: any) {
     );
 }
 
-// ============ EMAIL TEMPLATE TAB (unchanged) ============
+// ============ EMAIL TEMPLATE TAB ============
 
 function EmailTemplateTab({ template, canEdit, onChange }: { template: EmailTemplate; canEdit: boolean; onChange: (t: EmailTemplate) => void }) {
     const updateSection = <K extends keyof EmailTemplate>(section: K, field: keyof EmailTemplate[K], value: string) => {
@@ -647,7 +648,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     return (
         <div>
             <h3 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--ubv-brand-gradient-start)', marginBottom: '12px', fontWeight: 600 }}>{title}</h3>
-            <div className="glass-panel" style={{ padding: '16px', background: 'rgba(128,128,128,0.03)' }}>{children}</div>
+            <div className="glass-panel" style={{ padding: '16px' }}>{children}</div>
         </div>
     );
 }

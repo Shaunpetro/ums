@@ -22,7 +22,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-    const { user } = useAuth();
+    const { user, authState } = useAuth();
+
+    if (authState === 'loading') {
+        return (
+            <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--ubv-bg-primary)' }}>
+                Loading UMS...
+            </div>
+        );
+    }
 
     return (
         <Routes>

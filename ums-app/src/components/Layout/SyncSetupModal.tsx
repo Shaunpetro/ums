@@ -38,7 +38,7 @@ export default function SyncSetupModal({ onComplete, userPath }: Props) {
     };
 
     return (
-        <div className="modal-overlay open" style={{ zIndex: 9999, background: 'rgba(23, 21, 26, 0.9)' }}>
+        <div className="modal-overlay open" style={{ zIndex: 9999 }}>
             <div className="modal-content glass-panel" style={{ maxWidth: '500px' }}>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
                     <HardDrive size={64} color="var(--ubv-brand-gradient-start)" />
@@ -47,7 +47,7 @@ export default function SyncSetupModal({ onComplete, userPath }: Props) {
                 <p className="marker" style={{ textAlign: 'center', marginBottom: '16px' }}>
                     Select a folder on your PC. Everything inside this folder will automatically sync to your personal cloud directory:
                 </p>
-                <div className="glass-panel" style={{ padding: '12px', textAlign: 'center', marginBottom: '24px', background: 'rgba(128,128,128,0.1)' }}>
+                <div className="glass-panel" style={{ padding: '12px', textAlign: 'center', marginBottom: '24px' }}>
                     <code>{userPath}/</code>
                 </div>
 

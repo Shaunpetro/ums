@@ -12,7 +12,7 @@ export default function AddCompanyModal({ onClose }: Props) {
     const { toast } = useToast();
 
     return (
-        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999, background: 'rgba(23, 21, 26, 0.95)' }}>
+        <div className="modal-overlay open" onClick={onClose} style={{ zIndex: 99999 }}>
             <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
                 <div className="modal-header">
                     <h2 className="modal-title">Add Workspace</h2>

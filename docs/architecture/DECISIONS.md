@@ -433,3 +433,54 @@ Last updated: 2026-11-11
 
 **Locked:** yes
 **Date:** 2026-11-11
+
+---
+
+## DEC-002 (marker): SUPERSEDED
+
+**Superseded by:** DEC-048 (Local On-Premise Auth & Staged Revocation) and `docs/architecture/LOCAL-AUTH-STRATEGY.md`.
+
+**Reason:** The original DEC-002 assumed a cloud-VPS Autentico deployment. DEC-048 and LOCAL-AUTH-STRATEGY.md replaced that with LAN-hosted Autentico to eliminate cloud costs and Oracle capacity issues. The authentication provider decision (Autentico) is unchanged; only the deployment topology was superseded.
+
+**Locked:** yes
+**Date:** 2026-11-13
+**Signed off by:** Shaunpetro (pending)
+
+---
+
+## DEC-058: Offline-Trust Auth Strategy and Accepted Risks
+
+**Decision:**
+
+Existing user sessions remain valid offline for the full JWT TTL (30 days) without requiring server validation on boot. Server `validate` is advisory: its success updates `sync_mode` and reports suspension/revocation status, but its failure (Autentico unreachable) does not force logout. Only new logins and expired-token users require Autentico reachable.
+
+RS256 signature verification against a client-pinned public key is required on every local JWT check in Stage 05a (pulled forward from original 05c scope). Forged tokens are rejected at boot. This closes loophole L2 (JWT payload tampering for capability escalation).
+
+Suspension and revocation (Stage 05b) use quarantine uploads: files with `mtime >= suspended_at` upload to `{org}/suspended_uploads/{user}/{date}/` for admin review. Files with `mtime < suspended_at` upload to the user's normal S3 path. Downloads during the blind window (post-suspension, pre-detection) are logged to audit.
+
+Deployment to non-developer users occurs after Stage 05b. Stage 05c is hardening backlog, not blocking.
+
+**Accepted, documented risks of the cooperative security model:**
+
+1. **L1 - `sync_mode` tampering:** mitigated by holding `sync_mode` in Rust process memory, never on disk. Residual risk (binary patching) accepted.
+2. **L3 - clock manipulation:** partial mitigation via `server_time` in validate responses, cached as `last_successful_validate_at`. If `now_local - last_successful_validate_at > 30 days`, boot refuses login. Full mitigation requires server-authoritative enforcement (not implemented). Accepted.
+3. **L5 - shared S3 credentials:** all users have identical FileLu access. Prefix isolation is convention, not IAM. A suspended user with cached creds can upload directly to any S3 path for up to their JWT TTL. Mitigated operationally by revoking FileLu credentials on termination (manual step in offboarding runbook). Accepted for the 8-user trusted environment.
+4. **L6 - suspension learned via validate only:** a suspended user may work up to 6 hours after suspension without learning status (6-hour validate cadence). Accepted.
+5. **L8 - file mtime forgeable:** quarantine sorting is cooperative. A user can backdate post-suspension files. Accepted.
+
+**Rejected alternative:** enforcing server-authoritative validation on every boot was rejected because it reintroduces the "must be on LAN every launch" constraint this strategy specifically avoids.
+
+**Related mitigations folded into this decision:**
+- Banking details visible only to `admin:finance` holders (loophole L9). Company Profile banking section is hidden entirely for users without this capability.
+- Admin CLI requires bootstrap token (loophole L7). `autentico seed` and `autentico user` refuse to run without `--bootstrap-token` matching `AUTENTICO_BOOTSTRAP_TOKEN`.
+- API version header (`X-Autentico-API-Version: 1`) prevents silent breakage when Autentico evolves (loophole L4).
+
+**Locked:** yes
+**Date:** 2026-11-13
+**Signed off by:** Shaunpetro (accepted 2026-11-13)
+
+
+**DEC-057 clarifications (appended 2026-11-13):**
+
+- Banking details within Company Profile are visible only to users with `admin:finance`. Users with only `admin:profile` can edit identity, compliance, and email templates but cannot see or edit banking. This is enforced in `CompanyProfile.tsx` by gating the banking section on `admin:finance`. No new `read:banking` capability is introduced; `admin:finance` alone gates both view and edit of banking.
+- Per DEC-058, this gating is part of loophole L9 mitigation (bank account details are sensitive financial data; read visibility should not be granted implicitly to all profile viewers).

@@ -1,5 +1,5 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with theme-aware logo, compliance alerts, company switcher, and tray-aware UI.
+// Purpose: Main layout with theme-aware company logo, compliance alerts, company switcher, and tray-aware UI.
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check, AlertTriangle } from 'lucide-react';
@@ -57,6 +57,10 @@ export default function AppShell() {
     const [pendingCount, setPendingCount] = useState(0);
     const [isFlushing, setIsFlushing] = useState(false);
     const [complianceAlerts, setComplianceAlerts] = useState<ComplianceAlert[]>([]);
+
+    const [companyLogos, setCompanyLogos] = useState<{ light: string; dark: string }>({ light: '', dark: '' });
+    const [resolvedLogo, setResolvedLogo] = useState<string>('');
+    const logoCacheRef = useRef<Record<string, string>>({});
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -149,7 +153,6 @@ export default function AppShell() {
         return () => clearInterval(interval);
     }, [credsSet]);
 
-    // Compliance alerts: check once per session on mount. Show a single toast.
     useEffect(() => {
         if (!user) return;
         const sessionKey = `ums-compliance-checked-${user.org}-${new Date().toDateString()}`;
@@ -170,6 +173,64 @@ export default function AppShell() {
             })
             .catch(() => { /* silent */ });
     }, [user, toast]);
+
+    useEffect(() => {
+        if (!user?.org) return;
+        const orgId = user.org.replace(/ /g, '_');
+        invoke<string>('get_company_profile', { orgId })
+            .then(raw => {
+                if (!raw || raw === '{}') {
+                    setCompanyLogos({ light: '', dark: '' });
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(raw);
+                    const branding = parsed.branding || {};
+                    setCompanyLogos({
+                        light: branding.logo_light_url || '',
+                        dark: branding.logo_dark_url || '',
+                    });
+                } catch (e) {
+                    console.error('Failed to parse company profile branding:', e);
+                    setCompanyLogos({ light: '', dark: '' });
+                }
+            })
+            .catch(() => setCompanyLogos({ light: '', dark: '' }));
+    }, [user?.org]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const sourceKey = isDarkMode ? companyLogos.dark : companyLogos.light;
+
+        if (!sourceKey) {
+            setResolvedLogo('');
+            return;
+        }
+
+        if (sourceKey.startsWith('/') || sourceKey.startsWith('http://') || sourceKey.startsWith('https://')) {
+            setResolvedLogo(sourceKey);
+            return;
+        }
+
+        const cached = logoCacheRef.current[sourceKey];
+        if (cached) {
+            setResolvedLogo(cached);
+            return;
+        }
+
+        invoke<string>('get_share_url', { key: sourceKey })
+            .then(url => {
+                if (cancelled) return;
+                logoCacheRef.current[sourceKey] = url;
+                setResolvedLogo(url);
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setResolvedLogo('');
+            });
+
+        return () => { cancelled = true; };
+    }, [isDarkMode, companyLogos.light, companyLogos.dark]);
 
     const reportCloudStatus = (success: boolean, errorMsg?: string) => {
         if (success) { setIsConnected(true); setApiError(null); }
@@ -201,7 +262,6 @@ export default function AppShell() {
 
     const capabilities = user.capabilities ?? [];
     const orgs = user.orgs ?? [user.org];
-    const orgLabel = (user.org ?? 'UNKNOWN').toUpperCase();
     const userName = user.name ?? 'Unknown';
     const userRole = user.role ?? '';
     const userInitial = userName.charAt(0);
@@ -211,9 +271,8 @@ export default function AppShell() {
     const finalConnectedState = credsSet && isConnected;
     const isFullySyncing = syncReady && finalConnectedState && !isFlushing;
     const canEditCompany = capabilities.includes('admin:profile') || capabilities.includes('admin:finance');
+    const canViewCompany = canEditCompany || capabilities.includes('read:profile');
     const alertCount = complianceAlerts.length;
-
-    const logoSrc = isDarkMode ? '/logo-horizontal-white.svg' : '/logo-horizontal-color.svg';
 
     return (
         <div className="app-container">
@@ -240,7 +299,7 @@ export default function AppShell() {
             <aside className="sidebar glass-panel">
                 <div className="brand">
                     <img
-                        src={logoSrc}
+                        src={isDarkMode ? '/logo-horizontal-white.svg' : '/logo-horizontal-color.svg'}
                         alt="Ubuveil"
                         style={{ height: '32px', marginRight: '12px' }}
                         onError={(e) => {
@@ -315,10 +374,19 @@ export default function AppShell() {
                             <button
                                 className="text-btn"
                                 onClick={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', background: isCompanyDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent', border: '1px solid var(--ubv-border)', position: 'relative' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', borderRadius: '6px', background: isCompanyDropdownOpen ? 'rgba(255,255,255,0.1)' : 'transparent', border: '1px solid var(--ubv-border)', position: 'relative' }}
+                                title={user.org}
                             >
-                                <Building2 size={16} color="var(--ubv-brand-gradient-start)" />
-                                <span className="marker" style={{ fontWeight: 700 }}>[{orgLabel}]</span>
+                                {resolvedLogo ? (
+                                    <img
+                                        src={resolvedLogo}
+                                        alt={user.org}
+                                        style={{ height: '24px', maxWidth: '140px', objectFit: 'contain', display: 'block' }}
+                                        onError={() => setResolvedLogo('')}
+                                    />
+                                ) : (
+                                    <span style={{ fontWeight: 700, color: 'var(--ubv-text-main)', fontSize: '13px' }}>{user.org}</span>
+                                )}
                                 {alertCount > 0 && (
                                     <span style={{ position: 'absolute', top: '-4px', right: '-4px', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--ubv-danger)', color: 'white', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         {alertCount}
@@ -359,7 +427,7 @@ export default function AppShell() {
                                     <button className="text-btn" onClick={() => { setIsAddCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
                                         <Plus size={14} /> Add Workspace
                                     </button>
-                                    {canEditCompany && (
+                                    {canViewCompany && (
                                         <button className="text-btn" onClick={() => { setIsCompanyOpen(true); setIsCompanyDropdownOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', borderRadius: '4px', width: '100%' }}>
                                             <Settings size={14} /> Company Settings
                                         </button>

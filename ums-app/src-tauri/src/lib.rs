@@ -1,5 +1,7 @@
 // Path: ums-app/src-tauri/src/lib.rs
-// Purpose: Tauri backend with 1-hour batch sync queue, tray menu, keyring credentials, caching, file logging, and DevTools command.
+// Purpose: Tauri backend with 1-hour batch sync queue, tray menu, keyring credentials, caching, file logging, DevTools command, and Autentico-backed authentication.
+
+mod rbac;
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{
@@ -30,6 +32,7 @@ const KEYRING_ACCESS: &str = "filelu_access_key";
 const KEYRING_SECRET: &str = "filelu_secret_key";
 const KEYRING_ENDPOINT: &str = "filelu_endpoint";
 const KEYRING_BUCKET: &str = "filelu_bucket";
+const KEYRING_JWT: &str = "autentico_jwt";
 
 fn keyring_entry(name: &str) -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, name).map_err(|e| format!("Keyring init failed: {}", e))
@@ -298,7 +301,7 @@ fn start_watcher(app: tauri::AppHandle, state: State<'_, AppState>, path_str: St
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if name.starts_with("~$") || name.ends_with(".tmp") || name == ".DS_Store" { continue; }
                 }
-                
+
                 if let Ok(rel_path) = path.strip_prefix(&base_path) {
                     let rel_str = rel_path.to_string_lossy().replace("\\", "/");
                     let full_s3_key = format!("{}{}", target_prefix_clone, rel_str);
@@ -314,7 +317,7 @@ fn start_watcher(app: tauri::AppHandle, state: State<'_, AppState>, path_str: St
                             let mut guard = state.pending_uploads.lock().unwrap();
                             guard.insert(full_s3_key, (path.clone(), Instant::now()));
                         }
-                        let _ = app_handle.emit("sync-status", serde_json::json!({ "status": "pending", "message": format!("File queued for sync.") }));
+                        let _ = app_handle.emit("sync-status", serde_json::json!({ "status": "pending", "message": "File queued for sync." }));
                     }
                 }
             }
@@ -396,7 +399,7 @@ async fn read_local_file_as_base64(local_root: String, s3_key: String, user_path
     let safe_user_path = sanitize_prefix(&user_path);
     let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
     let full_path = PathBuf::from(&local_root).join(relative_path);
-    
+
     if !full_path.exists() {
         return Err("File not found locally".to_string());
     }
@@ -474,7 +477,7 @@ async fn open_file_natively(app: tauri::AppHandle, s3_key: String, local_root: O
         let safe_user_path = sanitize_prefix(&user_path);
         let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
         let full_path = PathBuf::from(&root).join(relative_path);
-        
+
         if full_path.exists() {
             log(&format!("Opening locally: {:?}", full_path));
             return tauri_plugin_opener::open_path(full_path, None::<&str>).map_err(|e| e.to_string());
@@ -483,7 +486,7 @@ async fn open_file_natively(app: tauri::AppHandle, s3_key: String, local_root: O
 
     let (cache_file, meta_file) = get_cache_paths(&app, &s3_key);
     let now = Local::now().timestamp();
-    
+
     if cache_file.exists() && meta_file.exists() {
         if let Ok(meta_str) = std::fs::read_to_string(&meta_file) {
             if let Ok(meta) = serde_json::from_str::<CacheMeta>(&meta_str) {
@@ -519,7 +522,7 @@ fn evict_cache_if_needed(dir: &PathBuf, max_bytes: u64) -> std::io::Result<()> {
         for entry in rd.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") { continue; }
-            
+
             if let Ok(meta) = entry.metadata() {
                 let cached_at = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
                 total += meta.len();
@@ -558,10 +561,10 @@ fn clear_file_cache(app: tauri::AppHandle) -> Result<(), String> {
 fn list_local_files(local_root: String, current_prefix: String, user_path: String) -> Result<Vec<S3Object>, String> {
     let base = PathBuf::from(&local_root);
     let user_base = sanitize_prefix(&user_path);
-    
+
     let rel_prefix = current_prefix.strip_prefix(&user_base).unwrap_or("").trim_start_matches('/');
     let search_dir = base.join(rel_prefix);
-    
+
     if !search_dir.exists() { return Ok(vec![]); }
 
     let mut objects = Vec::new();
@@ -576,7 +579,7 @@ fn list_local_files(local_root: String, current_prefix: String, user_path: Strin
         let metadata = entry.metadata().map_err(|e| e.to_string())?;
         let is_folder = metadata.is_dir();
         let key = format!("{}{}{}", current_prefix, name, if is_folder { "/" } else { "" });
-        
+
         let last_modified = metadata.modified().ok().map(|t| {
             let dt: chrono::DateTime<chrono::Utc> = t.into();
             dt.to_rfc3339()
@@ -623,7 +626,7 @@ async fn poll_it_alerts(app: tauri::AppHandle) {
                         for obj in contents {
                             if let Some(key) = &obj.key {
                                 if key > &last_seen_key && key.ends_with(".json") {
-                                    let msg = format!("New IT Alert from {}", key.split('_').last().unwrap_or("User").replace(".json", ""));
+                                    let msg = format!("New IT Alert from {}", key.split('_').next_back().unwrap_or("User").replace(".json", ""));
                                     let _ = app.notification().builder().title("Ubuveil IT Support").body(&msg).show();
                                     last_seen_key = key.clone();
                                 }
@@ -660,11 +663,11 @@ async fn get_storage_usage() -> Result<u64, String> {
 
 #[tauri::command]
 async fn list_files(prefix: Option<String>) -> Result<Vec<S3Object>, String> {
-    let raw_prefix = prefix.unwrap_or_else(|| "".to_string());
+    let raw_prefix = prefix.unwrap_or_default();
     let search_prefix = sanitize_prefix(&raw_prefix);
     let (client, bucket) = get_s3_client().await?;
     let resp = client.list_objects_v2().bucket(bucket).prefix(&search_prefix).delimiter("/").send().await.map_err(format_s3_error)?;
-    
+
     let mut objects = Vec::new();
     if let Some(prefixes) = resp.common_prefixes {
         for p in prefixes {
@@ -681,7 +684,7 @@ async fn list_files(prefix: Option<String>) -> Result<Vec<S3Object>, String> {
             if let Some(key) = object.key {
                 if key == search_prefix { continue; }
                 let normalized_key = key.trim_end_matches('/');
-                let has_extension = normalized_key.split('/').last().unwrap_or("").contains('.');
+                let has_extension = normalized_key.split('/').next_back().unwrap_or("").contains('.');
                 let is_folder = key.ends_with('/') || (size == 0 && !has_extension);
                 if is_folder {
                     let exists = objects.iter().any(|o| o.key.trim_end_matches('/') == normalized_key);
@@ -734,7 +737,7 @@ async fn download_file(app: tauri::AppHandle, key: String) -> Result<String, Str
     let (client, bucket) = get_s3_client().await?;
     let resp = client.get_object().bucket(bucket).key(&key).send().await.map_err(format_s3_error)?;
     let bytes = resp.body.collect().await.map_err(|e| format!("Failed to read body: {}", e))?.into_bytes();
-    let file_name = key.split('/').last().unwrap_or("downloaded_file");
+    let file_name = key.split('/').next_back().unwrap_or("downloaded_file");
     let download_dir = app.path().download_dir().map_err(|e| format!("Could not find Downloads folder: {}", e))?;
     let dest_path = download_dir.join(file_name);
     tokio::fs::write(&dest_path, bytes).await.map_err(|e| format!("Failed to save file: {}", e))?;
@@ -796,10 +799,8 @@ async fn check_compliance_alerts(org_id: String) -> Result<Vec<ComplianceAlert>,
     for family in families {
         let name = family.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
 
-        // Pick the current version: highest issued_date, tiebreak by uploaded_at.
-        // Mirrors getCurrentVersion() in utils/compliance.ts.
         let versions = family.get("versions").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let mut best: Option<(String, String, String)> = None; // (issued_date, expiry_date, uploaded_at)
+        let mut best: Option<(String, String, String)> = None;
         for v in versions {
             let issued = v.get("issued_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
             let expiry = v.get("expiry_date").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -850,6 +851,277 @@ async fn upload_compliance_doc(org_id: String, doc_id: String, local_path: Strin
     Ok(key)
 }
 
+// --- AUTENTICO AUTHENTICATION ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct User {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub org: String,
+    pub orgs: Vec<String>,
+    pub dept: String,
+    pub path: String,
+    pub email: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JwtClaims {
+    sub: String,
+    exp: i64,
+    user_metadata: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: User,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ValidateResponse {
+    pub status: String,
+    pub server_time: String,
+    #[serde(default)]
+    pub suspended_at: Option<String>,
+    #[serde(default)]
+    pub revoked_at: Option<String>,
+}
+
+fn get_autentico_url() -> Result<String, String> {
+    let _ = dotenvy::from_filename("../.env");
+    let _ = dotenvy::from_filename(".env");
+    std::env::var("UMS_AUTENTICO_URL").map_err(|_| "UMS_AUTENTICO_URL not set in .env".to_string())
+}
+
+fn get_last_validate_path(app: &tauri::AppHandle) -> PathBuf {
+    let mut path = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+    path.push("last_validate.txt");
+    path
+}
+
+fn get_last_validate(app: &tauri::AppHandle) -> Option<chrono::DateTime<chrono::Utc>> {
+    let path = get_last_validate_path(app);
+    let content = std::fs::read_to_string(path).ok()?;
+    chrono::DateTime::parse_from_rfc3339(content.trim()).ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+}
+
+fn set_last_validate(app: &tauri::AppHandle, server_time: &str) {
+    let path = get_last_validate_path(app);
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let _ = std::fs::write(path, server_time);
+}
+
+fn verify_jwt(token: &str) -> Result<JwtClaims, String> {
+    let pem = include_str!("../keys/autentico-public.pem");
+    let decoding_key = jsonwebtoken::DecodingKey::from_rsa_pem(pem.as_bytes())
+        .map_err(|e| format!("Bad public key: {}", e))?;
+
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_issuer(&["autentico"]);
+    validation.set_audience(&["ums-desktop"]);
+    validation.validate_exp = true;
+
+    let token_data = jsonwebtoken::decode::<JwtClaims>(token, &decoding_key, &validation)
+        .map_err(|e| format!("Invalid token: {}", e))?;
+
+    Ok(token_data.claims)
+}
+
+fn translate_to_user(claims: &JwtClaims) -> Result<User, String> {
+    let meta = &claims.user_metadata;
+    let role = meta.get("role").and_then(|v| v.as_str()).ok_or("Missing role claim")?;
+    Ok(User {
+        id: claims.sub.clone(),
+        name: meta.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        email: meta.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        role: role.to_string(),
+        org: meta.get("org").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        orgs: meta.get("orgs").and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default(),
+        dept: meta.get("dept").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        path: meta.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        capabilities: crate::rbac::capabilities_for_role(role),
+    })
+}
+
+async fn fetch_validate_and_cache_server_time(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+) -> Result<ValidateResponse, String> {
+    let resp = client
+        .post(format!("{}/api/v1/auth/validate", base_url))
+        .header("X-Autentico-API-Version", "1")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Validate failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Validate returned {}", resp.status()));
+    }
+
+    let body: ValidateResponse = resp.json().await.map_err(|e| e.to_string())?;
+    set_last_validate(app, &body.server_time);
+    Ok(body)
+}
+
+#[tauri::command]
+async fn autentico_login(app: tauri::AppHandle, username: String, password: String) -> Result<LoginResponse, String> {
+    let base_url = get_autentico_url()?;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/auth/login", base_url))
+        .header("X-Autentico-API-Version", "1")
+        .json(&serde_json::json!({"username": username, "password": password}))
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach auth server: {}", e))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.map_err(|e| format!("Bad response: {}", e))?;
+
+    if !status.is_success() {
+        let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("Login failed").to_string();
+        return Err(msg);
+    }
+
+    let token = body.get("token").and_then(|v| v.as_str()).ok_or("Missing token in response")?.to_string();
+    let claims = verify_jwt(&token)?;
+    let user = translate_to_user(&claims)?;
+
+    set_credential(KEYRING_JWT, &token)?;
+
+    if let Err(e) = fetch_validate_and_cache_server_time(&app, &client, &base_url, &token).await {
+        log(&format!("Post-login validate failed (non-fatal): {}", e));
+    }
+
+    Ok(LoginResponse { token, user })
+}
+
+#[tauri::command]
+async fn autentico_logout() -> Result<(), String> {
+    if let Ok(token) = get_credential(KEYRING_JWT) {
+        if !token.is_empty() {
+            if let Ok(base_url) = get_autentico_url() {
+                let client = reqwest::Client::new();
+                let _ = client
+                    .post(format!("{}/api/v1/auth/logout", base_url))
+                    .header("X-Autentico-API-Version", "1")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .send()
+                    .await;
+            }
+        }
+    }
+    delete_credential(KEYRING_JWT);
+    Ok(())
+}
+
+#[tauri::command]
+async fn autentico_validate(app: tauri::AppHandle) -> Result<ValidateResponse, String> {
+    let token = get_credential(KEYRING_JWT).map_err(|_| "No session".to_string())?;
+    if token.is_empty() { return Err("No session".to_string()); }
+    let base_url = get_autentico_url()?;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/auth/validate", base_url))
+        .header("X-Autentico-API-Version", "1")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach auth server: {}", e))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    if status.as_u16() == 401 {
+        return Err("invalid_token".to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("Auth server error: {}", status));
+    }
+
+    let validate: ValidateResponse = serde_json::from_value(body).map_err(|e| e.to_string())?;
+    set_last_validate(&app, &validate.server_time);
+    Ok(validate)
+}
+
+#[tauri::command]
+async fn autentico_refresh(app: tauri::AppHandle) -> Result<LoginResponse, String> {
+    let token = get_credential(KEYRING_JWT).map_err(|_| "No session".to_string())?;
+    if token.is_empty() { return Err("No session".to_string()); }
+    let base_url = get_autentico_url()?;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{}/api/v1/auth/refresh", base_url))
+        .header("X-Autentico-API-Version", "1")
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Cannot reach auth server: {}", e))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    if !status.is_success() {
+        let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("Refresh failed").to_string();
+        return Err(msg);
+    }
+
+    let new_token = body.get("token").and_then(|v| v.as_str()).ok_or("Missing token")?.to_string();
+    let claims = verify_jwt(&new_token)?;
+    let user = translate_to_user(&claims)?;
+
+    set_credential(KEYRING_JWT, &new_token)?;
+
+    if let Err(e) = fetch_validate_and_cache_server_time(&app, &client, &base_url, &new_token).await {
+        log(&format!("Post-refresh validate failed (non-fatal): {}", e));
+    }
+
+    Ok(LoginResponse { token: new_token, user })
+}
+
+#[tauri::command]
+async fn get_cached_user(app: tauri::AppHandle) -> Result<Option<User>, String> {
+    let token = match get_credential(KEYRING_JWT) {
+        Ok(t) if !t.is_empty() => t,
+        _ => return Ok(None),
+    };
+
+    let claims = match verify_jwt(&token) {
+        Ok(c) => c,
+        Err(e) => {
+            log(&format!("Cached JWT verify failed: {}", e));
+            return Ok(None);
+        }
+    };
+
+    let now = chrono::Utc::now().timestamp();
+    if claims.exp <= now {
+        return Ok(None);
+    }
+
+    if let Some(last) = get_last_validate(&app) {
+        let elapsed = chrono::Utc::now().signed_duration_since(last);
+        if elapsed.num_days() > 30 {
+            return Ok(None);
+        }
+    }
+
+    Ok(Some(translate_to_user(&claims)?))
+}
+
+// --- TAURI RUN ---
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -876,7 +1148,8 @@ pub fn run() {
             save_sync_config, get_storage_usage, set_filelu_credentials, get_filelu_credentials_status,
             clear_filelu_credentials, start_sync_for_user, stop_sync_for_user, send_it_alert, open_local_folder,
             flush_pending_uploads, open_devtools,
-            get_company_profile, save_company_profile, check_compliance_alerts, upload_compliance_doc
+            get_company_profile, save_company_profile, check_compliance_alerts, upload_compliance_doc,
+            autentico_login, autentico_logout, autentico_validate, autentico_refresh, get_cached_user
         ])
         .setup(|app| {
             log("UMS backend ready");
@@ -901,8 +1174,8 @@ pub fn run() {
                 }).build(app)?;
 
             let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move { 
-                poll_it_alerts(handle.clone()).await; 
+            tauri::async_runtime::spawn(async move {
+                poll_it_alerts(handle.clone()).await;
             });
 
             // 1-Hour Background Flush Loop
