@@ -892,7 +892,9 @@ pub struct ValidateResponse {
 fn get_autentico_url() -> Result<String, String> {
     let _ = dotenvy::from_filename("../.env");
     let _ = dotenvy::from_filename(".env");
-    std::env::var("UMS_AUTENTICO_URL").map_err(|_| "UMS_AUTENTICO_URL not set in .env".to_string())
+    // Fallback to LAN IP for production builds where .env isn't present
+    Ok(std::env::var("UMS_AUTENTICO_URL")
+        .unwrap_or_else(|_| "http://192.168.0.195:8080".to_string()))
 }
 
 fn get_last_validate_path(app: &tauri::AppHandle) -> PathBuf {
