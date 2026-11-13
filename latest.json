@@ -1,0 +1,15 @@
+{
+  "version": "0.2.4",
+  "notes": "Automated release. See commits since previous tag for full changes.",
+  "pub_date": "2026-11-13T11:35:03.659Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTb3pSUGsxejh2NHZBdE1vMm5MazhzNmRESlU0Ylp4ZWEzSTJFS0RxQnRIa1I5bnlIN2J3ZjNXaDRHTmZZQ3NpRTJzL0RiWUpaNVl1MmRZdjVNS0lPcUR6SS96TkVnd1FnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NTY5NzAxCWZpbGU6VWJ1dmVpbCBNYW5hZ2VtZW50IFN5c3RlbV8wLjIuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4yLjQKRUVybkN2dk1TNGU5anlzd0pReTBZMmw5QlVDUDBIWU14NG0ybzRqdkk2eXFSWld2NEF3aTUvL29va0Fvd0xDUXlaQ3dHS0xRUSt2Si8yeFJLYmZMQ2c9PQo=",
+      "url": "https://github.com/Shaunpetro/ums/releases/download/app-v0.2.4/Ubuveil.Management.System_0.2.4_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTb3pSUGsxejh2NHZBdE1vMm5MazhzNmRESlU0Ylp4ZWEzSTJFS0RxQnRIa1I5bnlIN2J3ZjNXaDRHTmZZQ3NpRTJzL0RiWUpaNVl1MmRZdjVNS0lPcUR6SS96TkVnd1FnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NTY5NzAxCWZpbGU6VWJ1dmVpbCBNYW5hZ2VtZW50IFN5c3RlbV8wLjIuNF94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4yLjQKRUVybkN2dk1TNGU5anlzd0pReTBZMmw5QlVDUDBIWU14NG0ybzRqdkk2eXFSWld2NEF3aTUvL29va0Fvd0xDUXlaQ3dHS0xRUSt2Si8yeFJLYmZMQ2c9PQo=",
+      "url": "https://github.com/Shaunpetro/ums/releases/download/app-v0.2.4/Ubuveil.Management.System_0.2.4_x64-setup.exe"
+    }
+  }
+}
