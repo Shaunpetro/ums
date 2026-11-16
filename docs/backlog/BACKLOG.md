@@ -100,3 +100,9 @@ None yet.
 - **Description:** `handlers.go` has unused `AdminToken` field on the `Handlers` struct and a `jsonUnmarshal`/`jsonUnmarshalImpl` wrapper that should be inlined. Neither breaks the build. Clean up before Autentico v0.1.0 public release. Also: UMS `lib.rs` adds a `reqwest` dependency. Verify no version conflict with the `tauri-plugin-updater` transitive reqwest before the 05a merge; align if necessary.
 - **Blocking:** no
 - **Owner:** Petro@ATG
+
+### DOC-014: Multi-Org Tenancy (Pipeline - Phase 2)
+
+- **Description:** Currently, the UI uses `user.org` as the hardcoded primary workspace. To support users belonging to multiple workspaces (e.g., VSC Mining and VSC Aggregates), implement a dynamic `activeOrg` context in React. The Rust backend and S3 paths (`ums/orgs/{org-id}/`) are already multi-tenant ready, so this is purely a UI and sync-watcher refactor. Requires a UI to map local folders to specific workspaces when switching.
+- **Blocking:** no
+- **Owner:** Petro@ATG

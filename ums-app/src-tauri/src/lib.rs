@@ -96,9 +96,17 @@ pub struct CredentialStatus {
     pub all_set: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SyncMode {
+    Active,
+    UploadOnly,
+    Disabled,
+}
+
 pub struct AppState {
     pub watchers: Mutex<HashMap<String, notify::RecommendedWatcher>>,
     pub pending_uploads: Mutex<HashMap<String, (PathBuf, Instant)>>,
+    pub sync_mode: Mutex<SyncMode>,
 }
 
 fn log(msg: &str) {
@@ -110,6 +118,15 @@ fn sanitize_prefix(prefix: &str) -> String {
         prefix.to_string()
     } else {
         format!("{}/", prefix)
+    }
+}
+
+fn check_download_allowed(state: &State<'_, AppState>) -> Result<(), String> {
+    let mode = state.sync_mode.lock().unwrap();
+    match *mode {
+        SyncMode::Active => Ok(()),
+        SyncMode::UploadOnly => Err("Account suspended. Downloads disabled.".to_string()),
+        SyncMode::Disabled => Err("Device revoked. All sync disabled.".to_string()),
     }
 }
 
@@ -439,7 +456,8 @@ fn get_cache_paths(app: &tauri::AppHandle, s3_key: &str) -> (PathBuf, PathBuf) {
 }
 
 #[tauri::command]
-async fn cache_file_from_cloud(app: tauri::AppHandle, s3_key: String, last_modified: String, force_refresh: bool) -> Result<String, String> {
+async fn cache_file_from_cloud(app: tauri::AppHandle, state: State<'_, AppState>, s3_key: String, last_modified: String, force_refresh: bool) -> Result<String, String> {
+    check_download_allowed(&state)?;
     let (cache_file, meta_file) = get_cache_paths(&app, &s3_key);
     let now = Local::now().timestamp();
 
@@ -472,7 +490,8 @@ async fn cache_file_from_cloud(app: tauri::AppHandle, s3_key: String, last_modif
 }
 
 #[tauri::command]
-async fn open_file_natively(app: tauri::AppHandle, s3_key: String, local_root: Option<String>, user_path: String, last_modified: String) -> Result<(), String> {
+async fn open_file_natively(app: tauri::AppHandle, state: State<'_, AppState>, s3_key: String, local_root: Option<String>, user_path: String, last_modified: String) -> Result<(), String> {
+    check_download_allowed(&state)?;
     if let Some(root) = local_root {
         let safe_user_path = sanitize_prefix(&user_path);
         let relative_path = s3_key.strip_prefix(&safe_user_path).unwrap_or(&s3_key);
@@ -662,7 +681,8 @@ async fn get_storage_usage() -> Result<u64, String> {
 }
 
 #[tauri::command]
-async fn list_files(prefix: Option<String>) -> Result<Vec<S3Object>, String> {
+async fn list_files(state: State<'_, AppState>, prefix: Option<String>) -> Result<Vec<S3Object>, String> {
+    check_download_allowed(&state)?;
     let raw_prefix = prefix.unwrap_or_default();
     let search_prefix = sanitize_prefix(&raw_prefix);
     let (client, bucket) = get_s3_client().await?;
@@ -716,7 +736,8 @@ async fn delete_object(key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn get_share_url(key: String) -> Result<String, String> {
+async fn get_share_url(state: State<'_, AppState>, key: String) -> Result<String, String> {
+    check_download_allowed(&state)?;
     let (client, bucket) = get_s3_client().await?;
     let presigning_config = aws_sdk_s3::presigning::PresigningConfig::builder().expires_in(Duration::from_secs(3600)).build().map_err(|e| format!("Failed to build presigning config: {}", e))?;
     let presigned_req = client.get_object().bucket(bucket).key(key).presigned(presigning_config).await.map_err(|e| format!("Failed to generate URL: {:?}", e))?;
@@ -733,7 +754,8 @@ async fn upload_file(app: tauri::AppHandle, file_path: String, current_prefix: S
 }
 
 #[tauri::command]
-async fn download_file(app: tauri::AppHandle, key: String) -> Result<String, String> {
+async fn download_file(app: tauri::AppHandle, state: State<'_, AppState>, key: String) -> Result<String, String> {
+    check_download_allowed(&state)?;
     let (client, bucket) = get_s3_client().await?;
     let resp = client.get_object().bucket(bucket).key(&key).send().await.map_err(format_s3_error)?;
     let bytes = resp.body.collect().await.map_err(|e| format!("Failed to read body: {}", e))?.into_bytes();
@@ -974,7 +996,7 @@ async fn fetch_validate_and_cache_server_time(
 }
 
 #[tauri::command]
-async fn autentico_login(app: tauri::AppHandle, username: String, password: String) -> Result<LoginResponse, String> {
+async fn autentico_login(app: tauri::AppHandle, state: State<'_, AppState>, username: String, password: String) -> Result<LoginResponse, String> {
     let base_url = get_autentico_url()?;
     let client = reqwest::Client::new();
 
@@ -999,6 +1021,7 @@ async fn autentico_login(app: tauri::AppHandle, username: String, password: Stri
     let user = translate_to_user(&claims)?;
 
     set_credential(KEYRING_JWT, &token)?;
+    *state.sync_mode.lock().unwrap() = SyncMode::Active;
 
     if let Err(e) = fetch_validate_and_cache_server_time(&app, &client, &base_url, &token).await {
         log(&format!("Post-login validate failed (non-fatal): {}", e));
@@ -1008,7 +1031,7 @@ async fn autentico_login(app: tauri::AppHandle, username: String, password: Stri
 }
 
 #[tauri::command]
-async fn autentico_logout() -> Result<(), String> {
+async fn autentico_logout(state: State<'_, AppState>) -> Result<(), String> {
     if let Ok(token) = get_credential(KEYRING_JWT) {
         if !token.is_empty() {
             if let Ok(base_url) = get_autentico_url() {
@@ -1023,11 +1046,12 @@ async fn autentico_logout() -> Result<(), String> {
         }
     }
     delete_credential(KEYRING_JWT);
+    *state.sync_mode.lock().unwrap() = SyncMode::Active;
     Ok(())
 }
 
 #[tauri::command]
-async fn autentico_validate(app: tauri::AppHandle) -> Result<ValidateResponse, String> {
+async fn autentico_validate(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<ValidateResponse, String> {
     let token = get_credential(KEYRING_JWT).map_err(|_| "No session".to_string())?;
     if token.is_empty() { return Err("No session".to_string()); }
     let base_url = get_autentico_url()?;
@@ -1053,11 +1077,22 @@ async fn autentico_validate(app: tauri::AppHandle) -> Result<ValidateResponse, S
 
     let validate: ValidateResponse = serde_json::from_value(body).map_err(|e| e.to_string())?;
     set_last_validate(&app, &validate.server_time);
+
+    // Enforce sync mode on the backend based on server response
+    let mut mode = state.sync_mode.lock().unwrap();
+    if validate.status == "suspended" {
+        *mode = SyncMode::UploadOnly;
+    } else if validate.status == "revoked" {
+        *mode = SyncMode::Disabled;
+    } else {
+        *mode = SyncMode::Active;
+    }
+
     Ok(validate)
 }
 
 #[tauri::command]
-async fn autentico_refresh(app: tauri::AppHandle) -> Result<LoginResponse, String> {
+async fn autentico_refresh(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<LoginResponse, String> {
     let token = get_credential(KEYRING_JWT).map_err(|_| "No session".to_string())?;
     if token.is_empty() { return Err("No session".to_string()); }
     let base_url = get_autentico_url()?;
@@ -1084,6 +1119,7 @@ async fn autentico_refresh(app: tauri::AppHandle) -> Result<LoginResponse, Strin
     let user = translate_to_user(&claims)?;
 
     set_credential(KEYRING_JWT, &new_token)?;
+    *state.sync_mode.lock().unwrap() = SyncMode::Active;
 
     if let Err(e) = fetch_validate_and_cache_server_time(&app, &client, &base_url, &new_token).await {
         log(&format!("Post-refresh validate failed (non-fatal): {}", e));
@@ -1143,6 +1179,7 @@ pub fn run() {
         .manage(AppState {
             watchers: Mutex::new(HashMap::new()),
             pending_uploads: Mutex::new(HashMap::new()),
+            sync_mode: Mutex::new(SyncMode::Active),
         })
         .invoke_handler(tauri::generate_handler![
             list_files, list_local_files, create_folder, delete_object, get_share_url, read_local_file_as_base64,

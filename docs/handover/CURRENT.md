@@ -31,3 +31,17 @@ Path: docs/handover/CURRENT.md
 ## Rules for this file
 - Updated continuously, not at stage boundaries.
 - Reflects working tree state, not last commit.
+
+Path: docs/handover/CURRENT.md
+
+**Last handover:** `05b-auth-revocation.md`
+**Current branch:** `stage/02-installer-updates`
+**Current stage:** 05b - Auth Revocation (Closing)
+**Current work item:** Client-side enforcement of suspended/revoked states. Ready for release as 0.2.5, pending Workspace logic investigation.
+**Files edited this stage:** `lib.rs`, `AuthContext.tsx`, `AppShell.tsx`, `Cargo.toml`, `tauri.conf.json`.
+**Blockers:** None. 
+**Next action:** Investigate Workspace/Multi-tenancy logic. Then version bump and release. Next stage is 05c (Hardening) or Stage 06 (Calendar).
+
+## Rules for this file
+- Updated continuously, not at stage boundaries.
+- Reflects working tree state, not last commit.

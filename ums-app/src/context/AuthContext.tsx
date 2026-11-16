@@ -1,6 +1,5 @@
 // Path: ums-app/src/context/AuthContext.tsx
-// Purpose: Autentico-backed authentication context with offline-tolerant boot
-//          (RS256 verify + local expiry + clock guard in Rust via get_cached_user).
+// Purpose: Autentico-backed authentication context with offline-tolerant boot and sync mode enforcement.
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -18,10 +17,12 @@ export interface User {
 }
 
 type AuthState = 'loading' | 'authenticated' | 'unauthenticated';
+export type SyncMode = 'active' | 'upload_only' | 'disabled';
 
 interface AuthContextType {
     user: User | null;
     authState: AuthState;
+    syncMode: SyncMode;
     login: (username: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -31,36 +32,39 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [authState, setAuthState] = useState<AuthState>('loading');
+    const [syncMode, setSyncMode] = useState<SyncMode>('active');
 
     useEffect(() => {
         let cancelled = false;
 
-        // Clean up pre-05a localStorage. JWT in keyring is now the source of truth.
         localStorage.removeItem('ums-current-user');
 
         async function boot() {
-            // Step 1: local-only checks in Rust (RS256 signature, exp, clock guard).
             const cached = await invoke<User | null>('get_cached_user').catch(() => null);
             if (!cancelled && cached) {
                 setUser(cached);
                 setAuthState('authenticated');
-                // Best-effort background validate. Never blocks, never logs out per DEC-058.
-                invoke('autentico_validate').catch(() => { /* offline: user keeps working */ });
+                
+                // Immediately validate on boot to check for suspension/revocation
+                invoke<{ status: string }>('autentico_validate')
+                    .then(res => {
+                        if (res.status === 'suspended') setSyncMode('upload_only');
+                        else if (res.status === 'revoked') setSyncMode('disabled');
+                        else setSyncMode('active');
+                    })
+                    .catch(() => { /* offline: user keeps working */ });
                 return;
             }
 
-            // Step 2: try refresh. Handles clock drift / slight expiry edge cases
-            // when the LAN Autentico is reachable but the local token is stale.
             try {
                 const refreshed = await invoke<{ token: string; user: User }>('autentico_refresh');
                 if (!cancelled && refreshed?.user) {
                     setUser(refreshed.user);
                     setAuthState('authenticated');
+                    setSyncMode('active');
                     return;
                 }
-            } catch {
-                // Refresh failed (expired, revoked, or offline). Fall through.
-            }
+            } catch {}
 
             if (!cancelled) setAuthState('unauthenticated');
         }
@@ -69,16 +73,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => { cancelled = true; };
     }, []);
 
-    // Periodic validate every 6 hours while authenticated. Failure is silent (DEC-058).
-    // 05b will act on suspended/revoked status. 05a just proves the loop works.
     useEffect(() => {
         if (authState !== 'authenticated') return;
         const interval = setInterval(async () => {
             try {
-                await invoke('autentico_validate');
-            } catch {
-                // Offline. Silent. Do not log out per DEC-058.
-            }
+                const res = await invoke<{ status: string }>('autentico_validate');
+                if (res.status === 'suspended') setSyncMode('upload_only');
+                else if (res.status === 'revoked') setSyncMode('disabled');
+                else setSyncMode('active');
+            } catch {}
         }, 6 * 60 * 60 * 1000);
         return () => clearInterval(interval);
     }, [authState]);
@@ -87,23 +90,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const r = await invoke<{ token: string; user: User }>('autentico_login', { username, password });
         setUser(r.user);
         setAuthState('authenticated');
+        
+        // Immediately validate after login
+        try {
+            const res = await invoke<{ status: string }>('autentico_validate');
+            if (res.status === 'suspended') setSyncMode('upload_only');
+            else if (res.status === 'revoked') setSyncMode('disabled');
+            else setSyncMode('active');
+        } catch {
+            setSyncMode('active');
+        }
     };
 
     const logout = async () => {
         if (user) {
-            try {
-                await invoke('stop_sync_for_user', { userPath: user.path });
-            } catch (err) {
-                console.error('Failed to stop sync on logout:', err);
-            }
+            try { await invoke('stop_sync_for_user', { userPath: user.path }); } catch (err) { console.error(err); }
         }
         await invoke('autentico_logout').catch(() => {});
         setUser(null);
         setAuthState('unauthenticated');
+        setSyncMode('active');
     };
 
     return (
-        <AuthContext.Provider value={{ user, authState, login, logout }}>
+        <AuthContext.Provider value={{ user, authState, syncMode, login, logout }}>
             {children}
         </AuthContext.Provider>
     );

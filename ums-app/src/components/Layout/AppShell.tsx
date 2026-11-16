@@ -1,8 +1,8 @@
 // Path: ums-app/src/components/Layout/AppShell.tsx
-// Purpose: Main layout with theme-aware company logo, compliance alerts, company switcher, and tray-aware UI.
+// Purpose: Main layout with theme-aware company logo, compliance alerts, company switcher, sync mode banners, and tray-aware UI.
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, HardDrive, FileText, Receipt, Briefcase, CheckSquare, HelpCircle, Sun, Moon, Building2, LogOut, Activity, RefreshCw, ChevronDown, Settings, Plus, Check, AlertTriangle, XCircle } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
@@ -29,7 +29,7 @@ const NAV_ITEMS = [
 interface ComplianceAlert { name: string; status: string; days_until_expiry: number; }
 
 export default function AppShell() {
-    const { user, logout } = useAuth();
+    const { user, logout, syncMode } = useAuth();
     const { toast } = useToast();
     const navigate = useNavigate();
     const location = useLocation();
@@ -269,7 +269,7 @@ export default function AppShell() {
     const quotaPercentage = Math.min((storageUsed / (100 * 1024 * 1024 * 1024)) * 100, 100);
     const lastUpdated = new Date().toLocaleDateString();
     const finalConnectedState = credsSet && isConnected;
-    const isFullySyncing = syncReady && finalConnectedState && !isFlushing;
+    const isFullySyncing = syncReady && finalConnectedState && !isFlushing && syncMode === 'active';
     const canEditCompany = capabilities.includes('admin:profile') || capabilities.includes('admin:finance');
     const canViewCompany = canEditCompany || capabilities.includes('read:profile');
     const alertCount = complianceAlerts.length;
@@ -365,6 +365,26 @@ export default function AppShell() {
             </aside>
 
             <main className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
+                
+                {syncMode === 'upload_only' && (
+                    <div style={{ background: 'rgba(245, 171, 130, 0.15)', border: '1px solid var(--ubv-warning)', color: 'var(--ubv-warning)', padding: '12px 24px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px', margin: '0 16px' }}>
+                        <AlertTriangle size={20} />
+                        <div style={{ flex: 1 }}>
+                            <strong>Device Suspended (Upload-Only Mode)</strong>
+                            <div style={{ fontSize: '12px', marginTop: '2px' }}>Your account is suspended. Downloads are disabled. Your local work will still be uploaded to the cloud.</div>
+                        </div>
+                    </div>
+                )}
+                {syncMode === 'disabled' && (
+                    <div style={{ background: 'rgba(235, 111, 101, 0.15)', border: '1px solid var(--ubv-danger)', color: 'var(--ubv-danger)', padding: '12px 24px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px', margin: '0 16px' }}>
+                        <XCircle size={20} />
+                        <div style={{ flex: 1 }}>
+                            <strong>Device Revoked</strong>
+                            <div style={{ fontSize: '12px', marginTop: '2px' }}>Your session has been revoked. Sync is completely disabled. Contact your administrator.</div>
+                        </div>
+                    </div>
+                )}
+
                 <header className="topbar glass-panel">
                     <div className="search-bar">
                         <input type="text" placeholder={getSearchPlaceholder()} className="search-input" />
@@ -454,8 +474,8 @@ export default function AppShell() {
                             <RefreshCw size={10} className={isFlushing ? 'spin' : ''} /> Sync Now
                         </button>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Activity size={12} color={isFullySyncing ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
-                            {isFullySyncing ? 'Sync Active' : 'Sync Paused'}
+                                <Activity size={12} color={syncMode !== 'active' ? 'var(--ubv-danger)' : isFullySyncing ? 'var(--ubv-success)' : 'var(--ubv-warning)'} />
+                            {syncMode === 'upload_only' ? 'Upload Only' : syncMode === 'disabled' ? 'Sync Suspended' : isFullySyncing ? 'Sync Active' : 'Sync Paused'}
                         </div>
                         <span>v{appVersion} | Last Updated: {lastUpdated}</span>
                     </div>

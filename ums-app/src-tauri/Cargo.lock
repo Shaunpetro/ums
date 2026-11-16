@@ -6008,7 +6008,7 @@ dependencies = [
 
 [[package]]
 name = "ums-app"
-version = "0.2.3"
+version = "0.2.5"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
